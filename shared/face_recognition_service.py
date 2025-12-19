@@ -1,0 +1,294 @@
+"""
+Face recognition service using face_recognition library and OpenCV.
+"""
+import face_recognition
+import cv2
+import numpy as np
+from pathlib import Path
+from typing import List, Tuple, Optional, Dict
+import pickle
+import logging
+
+logger = logging.getLogger("attendance_app.face_recognition")
+
+
+class FaceRecognitionService:
+    """Service for face detection, encoding, and recognition."""
+    
+    def __init__(self, model: str = "hog", tolerance: float = 0.6):
+        """
+        Initialize the face recognition service.
+        
+        Args:
+            model: Face detection model ('hog' or 'cnn')
+            tolerance: Face matching tolerance (lower is more strict)
+        """
+        self.model = model
+        self.tolerance = tolerance
+        self.known_face_encodings: List[np.ndarray] = []
+        self.known_face_names: List[str] = []
+        logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}")
+    
+    def detect_faces(self, image_path: str) -> List[Tuple[int, int, int, int]]:
+        """
+        Detect faces in an image.
+        
+        Args:
+            image_path: Path to the image file
+            
+        Returns:
+            List of face locations as (top, right, bottom, left) tuples
+            
+        Raises:
+            FileNotFoundError: If image file doesn't exist
+            ValueError: If image cannot be loaded
+        """
+        try:
+            if not Path(image_path).exists():
+                raise FileNotFoundError(f"Image file not found: {image_path}")
+            
+            image = face_recognition.load_image_file(image_path)
+            face_locations = face_recognition.face_locations(image, model=self.model)
+            
+            logger.info(f"Detected {len(face_locations)} face(s) in {image_path}")
+            return face_locations
+        except Exception as e:
+            logger.error(f"Error detecting faces in {image_path}: {str(e)}")
+            raise ValueError(f"Failed to detect faces: {str(e)}")
+    
+    def encode_face(self, image_path: str) -> Optional[np.ndarray]:
+        """
+        Generate face encoding from an image.
+        
+        Args:
+            image_path: Path to the image file
+            
+        Returns:
+            Face encoding as numpy array, or None if no face detected
+            
+        Raises:
+            ValueError: If image processing fails
+        """
+        try:
+            if not Path(image_path).exists():
+                raise FileNotFoundError(f"Image file not found: {image_path}")
+            
+            # Load image using OpenCV first (handles BGR correctly)
+            image_bgr = cv2.imread(image_path)
+            if image_bgr is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            
+            # Convert BGR to RGB for face_recognition library
+            image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            
+            # Encode faces
+            face_encodings = face_recognition.face_encodings(image_rgb, model=self.model)
+            
+            if not face_encodings:
+                logger.warning(f"No face detected in {image_path}")
+                return None
+            
+            if len(face_encodings) > 1:
+                logger.warning(f"Multiple faces detected in {image_path}, using first face")
+            
+            logger.info(f"Successfully encoded face from {image_path}")
+            return face_encodings[0]
+        except Exception as e:
+            logger.error(f"Error encoding face from {image_path}: {str(e)}")
+            raise ValueError(f"Failed to encode face: {str(e)}")
+    
+    def add_known_face(self, name: str, image_path: str) -> bool:
+        """
+        Add a known face to the recognition system.
+        
+        Args:
+            name: Name of the person
+            image_path: Path to their image
+            
+        Returns:
+            True if successfully added, False otherwise
+        """
+        try:
+            encoding = self.encode_face(image_path)
+            if encoding is None:
+                return False
+            
+            self.known_face_encodings.append(encoding)
+            self.known_face_names.append(name)
+            logger.info(f"Added known face for {name} from {image_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add known face for {name}: {str(e)}")
+            return False
+    
+    def recognize_face(self, image_path: str) -> List[Dict[str, any]]:
+        """
+        Recognize faces in an image.
+        
+        Args:
+            image_path: Path to the image to recognize
+            
+        Returns:
+            List of dictionaries with 'name', 'confidence', and 'location' for each face
+        """
+        try:
+            if not Path(image_path).exists():
+                raise FileNotFoundError(f"Image file not found: {image_path}")
+            
+            image = face_recognition.load_image_file(image_path)
+            face_locations = face_recognition.face_locations(image, model=self.model)
+            face_encodings = face_recognition.face_encodings(image, face_locations)
+            
+            results = []
+            for face_encoding, face_location in zip(face_encodings, face_locations):
+                matches = face_recognition.compare_faces(
+                    self.known_face_encodings, 
+                    face_encoding, 
+                    tolerance=self.tolerance
+                )
+                face_distances = face_recognition.face_distance(
+                    self.known_face_encodings, 
+                    face_encoding
+                )
+                
+                name = "Unknown"
+                confidence = 0.0
+                
+                if len(face_distances) > 0:
+                    best_match_index = np.argmin(face_distances)
+                    if matches[best_match_index]:
+                        name = self.known_face_names[best_match_index]
+                        confidence = 1.0 - face_distances[best_match_index]
+                
+                results.append({
+                    "name": name,
+                    "confidence": float(confidence),
+                    "location": face_location
+                })
+                
+                logger.info(f"Recognized face: {name} with confidence {confidence:.2f}")
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error recognizing faces in {image_path}: {str(e)}")
+            raise ValueError(f"Failed to recognize faces: {str(e)}")
+    
+    def recognize_from_camera(self, frame: np.ndarray) -> List[Dict[str, any]]:
+        """
+        Recognize faces from a camera frame.
+        
+        Args:
+            frame: OpenCV BGR image frame
+            
+        Returns:
+            List of dictionaries with 'name', 'confidence', and 'location' for each face
+        """
+        try:
+            # Validate frame
+            if frame is None or frame.size == 0:
+                logger.error("Invalid frame: None or empty")
+                return []
+            
+            # Ensure frame is uint8
+            if frame.dtype != np.uint8:
+                logger.warning(f"Frame dtype is {frame.dtype}, converting to uint8")
+                frame = frame.astype(np.uint8)
+            
+            # Ensure frame has correct shape (height, width, 3)
+            if len(frame.shape) != 3 or frame.shape[2] != 3:
+                logger.error(f"Invalid frame shape: {frame.shape}, expected (H, W, 3)")
+                return []
+            
+            # Convert BGR to RGB
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Find faces
+            face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            
+            results = []
+            for face_encoding, face_location in zip(face_encodings, face_locations):
+                matches = face_recognition.compare_faces(
+                    self.known_face_encodings, 
+                    face_encoding, 
+                    tolerance=self.tolerance
+                )
+                face_distances = face_recognition.face_distance(
+                    self.known_face_encodings, 
+                    face_encoding
+                )
+                
+                name = "Unknown"
+                confidence = 0.0
+                
+                if len(face_distances) > 0:
+                    best_match_index = np.argmin(face_distances)
+                    if matches[best_match_index]:
+                        name = self.known_face_names[best_match_index]
+                        confidence = 1.0 - face_distances[best_match_index]
+                
+                results.append({
+                    "name": name,
+                    "confidence": float(confidence),
+                    "location": face_location
+                })
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error recognizing faces from camera: {str(e)}")
+            return []
+    
+    def save_encodings(self, filepath: str) -> bool:
+        """
+        Save known face encodings to a file.
+        
+        Args:
+            filepath: Path to save the encodings
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            data = {
+                "encodings": self.known_face_encodings,
+                "names": self.known_face_names
+            }
+            with open(filepath, "wb") as f:
+                pickle.dump(data, f)
+            logger.info(f"Saved {len(self.known_face_names)} face encodings to {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save encodings: {str(e)}")
+            return False
+    
+    def load_encodings(self, filepath: str) -> bool:
+        """
+        Load known face encodings from a file.
+        
+        Args:
+            filepath: Path to load the encodings from
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not Path(filepath).exists():
+                logger.warning(f"Encodings file not found: {filepath}")
+                return False
+            
+            with open(filepath, "rb") as f:
+                data = pickle.load(f)
+            
+            self.known_face_encodings = data["encodings"]
+            self.known_face_names = data["names"]
+            logger.info(f"Loaded {len(self.known_face_names)} face encodings from {filepath}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to load encodings: {str(e)}")
+            return False
+    
+    def clear_known_faces(self):
+        """Clear all known face encodings."""
+        self.known_face_encodings = []
+        self.known_face_names = []
+        logger.info("Cleared all known face encodings")
