@@ -20,6 +20,10 @@ FACE_RECOGNITION_MODEL = "hog"  # 'hog' or 'cnn'
 FACE_RECOGNITION_TOLERANCE = 0.6  # Lower is more strict
 MIN_FACE_SIZE = (30, 30)  # Minimum face size for detection
 
+# Haar Cascade configuration
+HAAR_CASCADE_PATH = str(BASE_DIR / "haarcascade_frontalface_default.xml")
+FACE_DETECTION_METHOD = os.getenv("FACE_DETECTION_METHOD", "both")  # 'auto', 'haar', or 'both'
+
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = os.getenv("LOG_FILE", str(BASE_DIR / "logs" / "app.log"))
