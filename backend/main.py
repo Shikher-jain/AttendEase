@@ -9,8 +9,10 @@ from .config import UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGI
 import sys
 import os
 from pathlib import Path
+
 # Add parent directory to path to import shared modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from shared.face_recognition_service import FaceRecognitionService
 from shared.live_video_service import LiveVideoService, LiveRecognitionSession
 import shutil
