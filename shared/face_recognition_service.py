@@ -29,16 +29,16 @@ class FaceRecognitionService:
         self.known_face_names: List[str] = []
         logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}")
     
-    def detect_faces(self, image_path: str) -> List[Tuple[int, int, int, int]]:
+    def detect_faces(self, image_path: str, method: str = "auto", haar_cascade_path: Optional[str] = None) -> List[Tuple[int, int, int, int]]:
         """
-        Detect faces in an image.
+        Detect faces in an image using either face_recognition or Haar cascade.
         
         Args:
             image_path: Path to the image file
-            
+            method: 'auto' (default, use face_recognition), 'haar' (use Haar cascade), or 'both' (return union of both)
+            haar_cascade_path: Path to Haar cascade XML file (required if method is 'haar' or 'both')
         Returns:
             List of face locations as (top, right, bottom, left) tuples
-            
         Raises:
             FileNotFoundError: If image file doesn't exist
             ValueError: If image cannot be loaded
@@ -47,11 +47,31 @@ class FaceRecognitionService:
             if not Path(image_path).exists():
                 raise FileNotFoundError(f"Image file not found: {image_path}")
             
-            image = face_recognition.load_image_file(image_path)
-            face_locations = face_recognition.face_locations(image, model=self.model)
-            
-            logger.info(f"Detected {len(face_locations)} face(s) in {image_path}")
-            return face_locations
+            results = []
+            used_methods = []
+            # face_recognition method
+            if method in ("auto", "both"):
+                image = face_recognition.load_image_file(image_path)
+                fr_locations = face_recognition.face_locations(image, model=self.model)
+                results.extend(fr_locations)
+                used_methods.append("face_recognition")
+            # Haar cascade method
+            if method in ("haar", "both"):
+                if not haar_cascade_path or not Path(haar_cascade_path).exists():
+                    raise ValueError("Valid haar_cascade_path must be provided for Haar cascade detection.")
+                image_bgr = cv2.imread(image_path)
+                if image_bgr is None:
+                    raise ValueError(f"Failed to load image: {image_path}")
+                gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+                face_cascade = cv2.CascadeClassifier(haar_cascade_path)
+                haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                # Convert (x, y, w, h) to (top, right, bottom, left)
+                for (x, y, w, h) in haar_faces:
+                    top, right, bottom, left = y, x + w, y + h, x
+                    results.append((top, right, bottom, left))
+                used_methods.append("haar_cascade")
+            logger.info(f"Detected {len(results)} face(s) in {image_path} using {', '.join(used_methods)}")
+            return results
         except Exception as e:
             logger.error(f"Error detecting faces in {image_path}: {str(e)}")
             raise ValueError(f"Failed to detect faces: {str(e)}")
