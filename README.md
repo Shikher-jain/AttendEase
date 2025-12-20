@@ -22,6 +22,7 @@ A comprehensive face recognition-based attendance system with **real-time live v
 ### Technical Features
 - ✅ Comprehensive error handling and validation
 - ✅ Detailed logging for debugging and monitoring
+- ✅ **Hybrid face detection** (face_recognition library + Haar Cascade for improved accuracy)
 - ✅ Face detection with validation (single face per image)
 - ✅ Database relationships and integrity constraints
 - ✅ RESTful API with FastAPI
@@ -41,13 +42,15 @@ attendance_app/
 ├── frontend/              # Frontend UI
 │   └── app.py            # Streamlit application
 ├── shared/                # Shared utilities
-│   └── face_recognition_service.py  # Face recognition logic
+│   ├── face_recognition_service.py  # Face recognition logic
+│   └── live_video_service.py        # Live video processing
 ├── tests/                 # Test suite
 │   ├── test_api.py       # API endpoint tests
 │   ├── test_database.py  # Database model tests
 │   └── test_face_recognition.py  # Face recognition tests
 ├── student_images/        # Student photos storage
 ├── logs/                  # Application logs
+├── haarcascade_frontalface_default.xml  # Haar Cascade classifier for face detection
 ├── requirements.txt       # Python dependencies
 └── README.md             # This file
 ```
@@ -185,6 +188,10 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 # Face Recognition
 FACE_RECOGNITION_MODEL = "hog"  # 'hog' or 'cnn'
 FACE_RECOGNITION_TOLERANCE = 0.6  # Lower = more strict
+
+# Face Detection Method (NEW)
+FACE_DETECTION_METHOD = "both"  # 'auto' (face_recognition only), 'haar' (Haar Cascade only), or 'both' (combined)
+HAAR_CASCADE_PATH = "haarcascade_frontalface_default.xml"
 
 # Logging
 LOG_LEVEL = "INFO"

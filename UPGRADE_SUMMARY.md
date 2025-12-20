@@ -58,18 +58,21 @@ except Exception as e:
 
 ### 3. **Advanced Face Recognition Service** 🔍
 - ✅ Complete face recognition module (`face_recognition_service.py`)
+- ✅ **Hybrid face detection** (face_recognition library + Haar Cascade)
 - ✅ Face detection with validation
 - ✅ Face encoding generation
 - ✅ Face matching with confidence scores
 - ✅ Camera frame processing
 - ✅ Encoding persistence (save/load)
+- ✅ Configurable detection methods
 
 **Capabilities:**
-- Detect faces in images
-- Recognize registered students
+- Detect faces using multiple methods (auto, haar, or both combined)
+- Recognize registered students with high accuracy
 - Handle multiple faces
 - Confidence scoring
 - Real-time camera recognition
+- Improved detection accuracy through hybrid approach
 
 ### 4. **Enhanced Frontend** 🎨
 - ✅ Modern, professional UI with custom styling

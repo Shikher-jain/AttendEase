@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from .database import SessionLocal, Student, Attendance
 from .logger import logger
-from .config import UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS
+from .config import UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS, HAAR_CASCADE_PATH, FACE_DETECTION_METHOD
 import sys
 import os
 from pathlib import Path
@@ -38,8 +38,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize face recognition service
-face_service = FaceRecognitionService()
+# Initialize face recognition service with Haar Cascade support
+face_service = FaceRecognitionService(haar_cascade_path=HAAR_CASCADE_PATH, detection_method=FACE_DETECTION_METHOD)
 ENCODINGS_FILE = "face_encodings.pkl"
 
 # Initialize live video service
@@ -165,9 +165,9 @@ async def register_student(
         
         logger.info(f"Saved image to {image_path}")
         
-        # Detect and encode face
+        # Detect and encode face using both methods (face_recognition + Haar Cascade)
         try:
-            faces = face_service.detect_faces(image_path)
+            faces = face_service.detect_faces(image_path, method=FACE_DETECTION_METHOD, haar_cascade_path=HAAR_CASCADE_PATH)
             if not faces:
                 os.remove(image_path)
                 logger.warning(f"No face detected in uploaded image for {name}")

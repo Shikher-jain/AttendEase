@@ -15,19 +15,23 @@ logger = logging.getLogger("attendance_app.face_recognition")
 class FaceRecognitionService:
     """Service for face detection, encoding, and recognition."""
     
-    def __init__(self, model: str = "hog", tolerance: float = 0.6):
+    def __init__(self, model: str = "hog", tolerance: float = 0.6, haar_cascade_path: Optional[str] = None, detection_method: str = "auto"):
         """
         Initialize the face recognition service.
         
         Args:
             model: Face detection model ('hog' or 'cnn')
             tolerance: Face matching tolerance (lower is more strict)
+            haar_cascade_path: Path to Haar Cascade XML file for face detection
+            detection_method: Detection method ('auto', 'haar', or 'both')
         """
         self.model = model
         self.tolerance = tolerance
+        self.haar_cascade_path = haar_cascade_path
+        self.detection_method = detection_method
         self.known_face_encodings: List[np.ndarray] = []
         self.known_face_names: List[str] = []
-        logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}")
+        logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}, detection_method={detection_method}, haar_cascade={haar_cascade_path}")
     
     def detect_faces(self, image_path: str, method: str = "auto", haar_cascade_path: Optional[str] = None) -> List[Tuple[int, int, int, int]]:
         """
@@ -195,7 +199,7 @@ class FaceRecognitionService:
     
     def recognize_from_camera(self, frame: np.ndarray) -> List[Dict[str, any]]:
         """
-        Recognize faces from a camera frame.
+        Recognize faces from a camera frame using configured detection method.
         
         Args:
             frame: OpenCV BGR image frame
@@ -219,11 +223,42 @@ class FaceRecognitionService:
                 logger.error(f"Invalid frame shape: {frame.shape}, expected (H, W, 3)")
                 return []
             
-            # Convert BGR to RGB
+            # Convert BGR to RGB for face_recognition library
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # Find faces
-            face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
+            # Find faces using configured detection method
+            face_locations = []
+            
+            # Use face_recognition library for detection (default/auto)
+            if self.detection_method in ("auto", "both"):
+                face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
+            
+            # Add Haar Cascade detection if configured
+            if self.detection_method in ("haar", "both") and self.haar_cascade_path:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                face_cascade = cv2.CascadeClassifier(self.haar_cascade_path)
+                haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                
+                # Convert (x, y, w, h) to (top, right, bottom, left) and add to face_locations
+                for (x, y, w, h) in haar_faces:
+                    top, right, bottom, left = y, x + w, y + h, x
+                    haar_location = (top, right, bottom, left)
+                    
+                    # Check if this location overlaps with existing detections (avoid duplicates)
+                    is_duplicate = False
+                    for existing_loc in face_locations:
+                        # Simple overlap check
+                        if (abs(existing_loc[0] - top) < 30 and 
+                            abs(existing_loc[1] - right) < 30 and
+                            abs(existing_loc[2] - bottom) < 30 and
+                            abs(existing_loc[3] - left) < 30):
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        face_locations.append(haar_location)
+            
+            # Encode detected faces
             face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
             
             results = []
