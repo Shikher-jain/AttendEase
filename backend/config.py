@@ -8,7 +8,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./attendance.db")
+# Default to PostgreSQL - must be configured via environment variable
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/attendease")
 
 # Storage configuration
 STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")  # 'local' or 'cloudinary'

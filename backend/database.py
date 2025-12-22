@@ -10,9 +10,10 @@ import datetime
 
 try:
     engine = create_engine(
-        DATABASE_URL, 
-        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+        DATABASE_URL,
         pool_pre_ping=True,  # Verify connections before using them
+        pool_size=10,  # Connection pool size
+        max_overflow=20,  # Maximum overflow connections
         echo=False  # Set to True for SQL query logging
     )
     logger.info(f"Database engine created successfully: {DATABASE_URL}")
