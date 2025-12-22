@@ -7,14 +7,14 @@ echo "Installing system dependencies..."
 apt-get update
 apt-get install -y \
     build-essential \
-    cmake \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
     libgtk-3-dev
 
-# Upgrade pip
+# Upgrade pip and install newer cmake via pip (system cmake is too old)
 pip install --upgrade pip
+pip install cmake>=3.18
 
 # Install dlib first (with specific version that has wheels)
 echo "Installing dlib..."
