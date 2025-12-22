@@ -1,19 +1,15 @@
-# Use Python 3.10 slim image
-FROM python:3.10-slim
+# Use full Python 3.10 image (not slim, for better compatibility)
+FROM python:3.10
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for dlib and OpenCV (excluding cmake - will install via pip)
+# Install system dependencies for dlib and OpenCV
 RUN apt-get update && apt-get install -y \
     build-essential \
     libopenblas-dev \
     liblapack-dev \
-    libx11-dev \
-    libgtk-3-dev \
-    libboost-python-dev \
-    libboost-thread-dev \
-    libgl1-mesa-glx \
+    libx11-6 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
