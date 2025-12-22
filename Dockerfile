@@ -13,12 +13,15 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and install newer cmake
+# Upgrade pip
 RUN pip install --upgrade pip
-RUN pip install cmake>=3.18
 
-# Install dlib first (compile from source with all dependencies available)
-RUN pip install dlib==19.24.2
+# Try to install pre-built dlib wheel, fall back to cmake build if needed
+# First attempt: use face_recognition's dependencies (includes prebuilt wheels)
+RUN pip install --no-cache-dir cmake>=3.18 && \
+    pip install --no-cache-dir dlib==19.24.2 || \
+    (apt-get update && apt-get install -y cmake && \
+     pip install --no-cache-dir dlib==19.24.2)
 
 # Copy requirements and install remaining dependencies
 COPY requirements.txt .
