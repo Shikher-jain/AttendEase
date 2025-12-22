@@ -1,4 +1,4 @@
-# 📚 Student Attendance System v2.1 🎥
+﻿# 📚 Student Attendance System v2.1 🎥
 
 A comprehensive face recognition-based attendance system with **real-time live video recognition**, robust error handling, logging, and a modern user interface.
 
@@ -313,7 +313,40 @@ tail -f logs/app.log
 
 ## 🚀 Deployment
 
-### Production Deployment
+### Deploy to Render (Recommended)
+
+**Quick Setup:**
+
+1. **Get Cloudinary Account** (Free)
+   - Sign up at [cloudinary.com](https://cloudinary.com)
+   - Note: Cloud Name, API Key, API Secret
+
+2. **Push to GitHub**
+   ```bash
+   git add .
+   git commit -m "Deploy to Render"
+   git push origin main
+   ```
+
+3. **Deploy on Render**
+   - Go to [dashboard.render.com](https://dashboard.render.com)
+   - Click **"New +"** → **"Blueprint"**
+   - Connect your repository
+   - All environment variables are pre-configured in `render.yaml`
+   - Click **"Apply"**
+
+4. **Access Your App:**
+   ```
+   https://attendease-backend.onrender.com
+   ```
+
+**Includes:**
+- ✅ PostgreSQL database (auto-provisioned)
+- ✅ Cloudinary storage (CDN-backed)
+- ✅ HTTPS by default
+- ✅ Free tier available
+
+### Local Production Testing
 
 1. **Install production dependencies**
    ```bash
@@ -322,18 +355,13 @@ tail -f logs/app.log
 
 2. **Run with Gunicorn**
    ```bash
-   gunicorn -w 4 -k uvicorn.workers.UvicornWorker attendance_app.backend.main:app
+   gunicorn -w 4 -k uvicorn.workers.UvicornWorker backend.main:app
    ```
 
 3. **Use environment variables**
    ```bash
    export DATABASE_URL="postgresql://user:pass@localhost/attendance"
    export LOG_LEVEL="WARNING"
-   ```
-
-4. **Deploy frontend**
-   ```bash
-   streamlit run frontend/app.py --server.port 80 --server.address 0.0.0.0
    ```
 
 ## 🤝 Contributing
@@ -344,43 +372,35 @@ To contribute to this project:
 3. Run tests to ensure everything works
 4. Submit a pull request with clear description
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License.
 
+---
+
 ## � Deployment
-
 ### Deploy to Render (Recommended for Production)
-
 AttendEase is ready to deploy on Render with PostgreSQL and Cloudinary integration!
-
 **Quick Deploy:**
 1. See [QUICK_DEPLOY.md](QUICK_DEPLOY.md) for a 5-minute checklist
 2. See [RENDER_DEPLOYMENT_GUIDE.md](RENDER_DEPLOYMENT_GUIDE.md) for comprehensive guide
-
 **What you need:**
 - GitHub repository
 - Cloudinary account (free tier available)
 - Render account (free tier available)
-
 **Features in production:**
 - PostgreSQL database (persistent)
 - Cloudinary image storage (CDN-backed)
 - HTTPS by default
 - Auto-scaling
 - Zero-downtime deployments
-
 ---
-
 ## 👥 Support
-
 For issues, questions, or contributions:
 - Create an issue in the repository
 - Check logs for error details
 - Review API documentation at `/docs`
-
 ## 🎯 Future Enhancements
-
 - [ ] Add user authentication and roles
 - [ ] Email notifications for attendance
 - [ ] Multi-camera support
@@ -389,9 +409,7 @@ For issues, questions, or contributions:
 - [ ] Export to multiple formats (PDF, Excel)
 - [ ] Integration with existing school systems
 - [ ] Real-time dashboard updates
-
 ---
-
 **Version**: 2.1.0 (Render-Ready)  
 **Last Updated**: December 2025  
 **Built with**: FastAPI, Streamlit, face_recognition, SQLAlchemy, Cloudinary
