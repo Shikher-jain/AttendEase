@@ -74,10 +74,19 @@ htmlcov/
 coverage.xml
 *.cover
 
-# Streamlit
-.streamlit/
+# IDE/Editor
+.vscode/
+.idea/
+.zencoder/
+.zenflow/
+*.swp
+*.swo
+*~
 
 # Temporary files
 temp/
 tmp/
 *.tmp
+
+# Streamlit
+.streamlit/
