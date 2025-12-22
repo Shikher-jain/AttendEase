@@ -213,53 +213,102 @@ class FaceRecognitionService:
                 logger.error("Invalid frame: None or empty")
                 return []
             
-            # Ensure frame is uint8
-            if frame.dtype != np.uint8:
-                logger.warning(f"Frame dtype is {frame.dtype}, converting to uint8")
-                frame = frame.astype(np.uint8)
+            # Ensure frame is a numpy array
+            if not isinstance(frame, np.ndarray):
+                logger.error("Frame is not a numpy array")
+                return []
+            
+            # Make a copy to avoid modifying original frame
+            frame = frame.copy()
             
             # Ensure frame has correct shape (height, width, 3)
             if len(frame.shape) != 3 or frame.shape[2] != 3:
                 logger.error(f"Invalid frame shape: {frame.shape}, expected (H, W, 3)")
                 return []
             
+            # Ensure frame is contiguous in memory
+            if not frame.flags['C_CONTIGUOUS']:
+                frame = np.ascontiguousarray(frame)
+            
+            # Ensure frame is uint8 (must be done BEFORE cvtColor)
+            if frame.dtype != np.uint8:
+                logger.warning(f"Frame dtype is {frame.dtype}, converting to uint8")
+                # Normalize to 0-255 range if needed
+                if frame.max() <= 1.0:
+                    frame = (frame * 255).astype(np.uint8)
+                else:
+                    frame = np.clip(frame, 0, 255).astype(np.uint8)
+            
             # Convert BGR to RGB for face_recognition library
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            try:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            except cv2.error as e:
+                logger.error(f"cvtColor failed: {str(e)}, frame shape: {frame.shape}, dtype: {frame.dtype}")
+                return []
+            
+            # Final validation of RGB frame
+            if rgb_frame.dtype != np.uint8:
+                logger.error(f"RGB frame dtype is {rgb_frame.dtype}, should be uint8")
+                return []
+            
+            if not rgb_frame.flags['C_CONTIGUOUS']:
+                rgb_frame = np.ascontiguousarray(rgb_frame)
             
             # Find faces using configured detection method
             face_locations = []
             
             # Use face_recognition library for detection (default/auto)
             if self.detection_method in ("auto", "both"):
-                face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
+                try:
+                    face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
+                except Exception as e:
+                    logger.error(f"face_recognition.face_locations failed: {str(e)}")
+                    logger.debug(f"Frame details: shape={rgb_frame.shape}, dtype={rgb_frame.dtype}, contiguous={rgb_frame.flags['C_CONTIGUOUS']}")
+                    # Fall back to Haar Cascade if available
+                    if self.detection_method == "both" and self.haar_cascade_path:
+                        logger.info("Falling back to Haar Cascade only")
+                    elif self.detection_method == "auto":
+                        return []
             
             # Add Haar Cascade detection if configured
             if self.detection_method in ("haar", "both") and self.haar_cascade_path:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                face_cascade = cv2.CascadeClassifier(self.haar_cascade_path)
-                haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-                
-                # Convert (x, y, w, h) to (top, right, bottom, left) and add to face_locations
-                for (x, y, w, h) in haar_faces:
-                    top, right, bottom, left = y, x + w, y + h, x
-                    haar_location = (top, right, bottom, left)
+                try:
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    face_cascade = cv2.CascadeClassifier(self.haar_cascade_path)
+                    haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
                     
-                    # Check if this location overlaps with existing detections (avoid duplicates)
-                    is_duplicate = False
-                    for existing_loc in face_locations:
-                        # Simple overlap check
-                        if (abs(existing_loc[0] - top) < 30 and 
-                            abs(existing_loc[1] - right) < 30 and
-                            abs(existing_loc[2] - bottom) < 30 and
-                            abs(existing_loc[3] - left) < 30):
-                            is_duplicate = True
-                            break
-                    
-                    if not is_duplicate:
-                        face_locations.append(haar_location)
+                    # Convert (x, y, w, h) to (top, right, bottom, left) and add to face_locations
+                    for (x, y, w, h) in haar_faces:
+                        top, right, bottom, left = y, x + w, y + h, x
+                        haar_location = (top, right, bottom, left)
+                        
+                        # Check if this location overlaps with existing detections (avoid duplicates)
+                        is_duplicate = False
+                        for existing_loc in face_locations:
+                            # Simple overlap check
+                            if (abs(existing_loc[0] - top) < 30 and 
+                                abs(existing_loc[1] - right) < 30 and
+                                abs(existing_loc[2] - bottom) < 30 and
+                                abs(existing_loc[3] - left) < 30):
+                                is_duplicate = True
+                                break
+                        
+                        if not is_duplicate:
+                            face_locations.append(haar_location)
+                except Exception as e:
+                    logger.error(f"Haar Cascade detection failed: {str(e)}")
+            
+            # If no faces detected, return early
+            if not face_locations:
+                return []
             
             # Encode detected faces
-            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            try:
+                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+            except Exception as e:
+                logger.error(f"face_recognition.face_encodings failed: {str(e)}")
+                logger.debug(f"Frame details: shape={rgb_frame.shape}, dtype={rgb_frame.dtype}")
+                return []
             
             results = []
             for face_encoding, face_location in zip(face_encodings, face_locations):

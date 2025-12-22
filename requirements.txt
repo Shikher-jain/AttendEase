@@ -29,3 +29,10 @@ httpx>=0.25.0
 
 # Utilities
 python-dotenv>=1.0.0
+
+# Cloud Storage
+cloudinary>=1.36.0
+requests>=2.31.0
+
+# Database (Production)
+psycopg2-binary>=2.9.9

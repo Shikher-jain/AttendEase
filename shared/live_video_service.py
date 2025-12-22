@@ -79,15 +79,35 @@ class LiveVideoService:
             logger.warning("Failed to read frame from camera")
             return None
         
-        # Ensure frame is in correct format (8-bit BGR)
-        if frame.dtype != np.uint8:
-            frame = frame.astype(np.uint8)
+        # Validate frame is numpy array
+        if not isinstance(frame, np.ndarray):
+            logger.error("Frame is not a numpy array")
+            return None
         
         # Ensure frame has 3 channels (BGR)
         if len(frame.shape) != 3 or frame.shape[2] != 3:
-            logger.error(f"Invalid frame shape: {frame.shape}")
+            logger.error(f"Invalid frame shape: {frame.shape}, expected (H, W, 3)")
             return None
         
+        # Ensure frame is contiguous in memory
+        if not frame.flags['C_CONTIGUOUS']:
+            frame = np.ascontiguousarray(frame)
+        
+        # Ensure frame is in correct format (8-bit BGR)
+        if frame.dtype != np.uint8:
+            logger.warning(f"Frame dtype is {frame.dtype}, converting to uint8")
+            # Normalize to 0-255 range if needed
+            if frame.max() <= 1.0:
+                frame = (frame * 255).astype(np.uint8)
+            else:
+                frame = np.clip(frame, 0, 255).astype(np.uint8)
+        
+        # Final validation
+        if frame.dtype != np.uint8:
+            logger.error(f"Failed to convert frame to uint8, dtype is {frame.dtype}")
+            return None
+        
+        return frame
         return frame
     
     def process_frame_for_recognition(self, frame: np.ndarray, draw_boxes: bool = True) -> Dict:

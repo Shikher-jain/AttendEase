@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from .database import SessionLocal, Student, Attendance
 from .logger import logger
-from .config import UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS, HAAR_CASCADE_PATH, FACE_DETECTION_METHOD
+from .config import (
+    UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS, 
+    HAAR_CASCADE_PATH, FACE_DETECTION_METHOD,
+    STORAGE_TYPE, CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
+)
 import sys
 import os
 from pathlib import Path
@@ -15,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared.face_recognition_service import FaceRecognitionService
 from shared.live_video_service import LiveVideoService, LiveRecognitionSession
+from shared.image_storage_service import ImageStorageService
 import shutil
 import cv2
 import numpy as np
@@ -41,6 +46,21 @@ app.add_middleware(
 # Initialize face recognition service with Haar Cascade support
 face_service = FaceRecognitionService(haar_cascade_path=HAAR_CASCADE_PATH, detection_method=FACE_DETECTION_METHOD)
 ENCODINGS_FILE = "face_encodings.pkl"
+
+# Initialize image storage service
+cloudinary_config = None
+if STORAGE_TYPE == "cloudinary" and CLOUDINARY_CLOUD_NAME:
+    cloudinary_config = {
+        "cloud_name": CLOUDINARY_CLOUD_NAME,
+        "api_key": CLOUDINARY_API_KEY,
+        "api_secret": CLOUDINARY_API_SECRET
+    }
+
+image_storage = ImageStorageService(
+    storage_type=STORAGE_TYPE,
+    upload_dir=UPLOAD_DIR,
+    cloudinary_config=cloudinary_config
+)
 
 # Initialize live video service
 live_video_service = LiveVideoService(face_service)
@@ -152,46 +172,65 @@ async def register_student(
                 detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB"
             )
         
-        # Create student directory
-        student_dir = os.path.join(UPLOAD_DIR, name.replace(" ", "_"))
-        os.makedirs(student_dir, exist_ok=True)
-        
-        # Save image
+        # Save image using storage service
         image_filename = f"{name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{file_ext}"
-        image_path = os.path.join(student_dir, image_filename)
+        success, image_path = image_storage.save_image(file_content, name, image_filename)
         
-        with open(image_path, "wb") as buffer:
-            buffer.write(file_content)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save image")
         
         logger.info(f"Saved image to {image_path}")
         
+        # Download image temporarily for face processing (handles both local and URL)
+        temp_image_path = image_storage.download_image_temp(image_path)
+        if not temp_image_path:
+            image_storage.delete_image(image_path)
+            raise HTTPException(status_code=500, detail="Failed to process image")
+        
         # Detect and encode face using both methods (face_recognition + Haar Cascade)
         try:
-            faces = face_service.detect_faces(image_path, method=FACE_DETECTION_METHOD, haar_cascade_path=HAAR_CASCADE_PATH)
+            faces = face_service.detect_faces(temp_image_path, method=FACE_DETECTION_METHOD, haar_cascade_path=HAAR_CASCADE_PATH)
             if not faces:
-                os.remove(image_path)
+                image_storage.delete_image(image_path)
+                if temp_image_path.startswith("/tmp") or "temp" in temp_image_path:
+                    os.remove(temp_image_path)
                 logger.warning(f"No face detected in uploaded image for {name}")
                 raise HTTPException(status_code=400, detail="No face detected in the image")
             
             if len(faces) > 1:
-                os.remove(image_path)
+                image_storage.delete_image(image_path)
+                if temp_image_path.startswith("/tmp") or "temp" in temp_image_path:
+                    os.remove(temp_image_path)
                 logger.warning(f"Multiple faces detected in uploaded image for {name}")
                 raise HTTPException(status_code=400, detail="Multiple faces detected. Please upload an image with only one face")
             
             # Add face to recognition system
-            success = face_service.add_known_face(name, image_path)
+            success = face_service.add_known_face(name, temp_image_path)
             if not success:
-                os.remove(image_path)
+                image_storage.delete_image(image_path)
+                if temp_image_path.startswith("/tmp") or "temp" in temp_image_path:
+                    os.remove(temp_image_path)
                 raise HTTPException(status_code=500, detail="Failed to process face encoding")
             
             # Save updated encodings
             face_service.save_encodings(ENCODINGS_FILE)
             
+            # Clean up temp file if it was downloaded
+            if temp_image_path != image_path and (temp_image_path.startswith("/tmp") or "temp" in temp_image_path):
+                try:
+                    os.remove(temp_image_path)
+                except:
+                    pass
+            
         except HTTPException:
             raise
         except Exception as e:
-            if os.path.exists(image_path):
-                os.remove(image_path)
+            image_storage.delete_image(image_path)
+            if temp_image_path and temp_image_path != image_path:
+                try:
+                    os.remove(temp_image_path)
+                except:
+                    pass
             logger.error(f"Face processing error for {name}: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to process face in image")
         
@@ -210,14 +249,12 @@ async def register_student(
             }
         except IntegrityError as e:
             db.rollback()
-            if os.path.exists(image_path):
-                os.remove(image_path)
+            image_storage.delete_image(image_path)
             logger.error(f"Database integrity error for {name}: {str(e)}")
             raise HTTPException(status_code=409, detail="Student already registered")
         except SQLAlchemyError as e:
             db.rollback()
-            if os.path.exists(image_path):
-                os.remove(image_path)
+            image_storage.delete_image(image_path)
             logger.error(f"Database error for {name}: {str(e)}")
             raise HTTPException(status_code=500, detail="Database error occurred")
             
@@ -680,24 +717,48 @@ async def live_register_student(
                 detail="Could not capture a suitable frame. Please ensure your face is clearly visible and you are the only person in frame."
             )
         
-        # Save the captured frame
-        student_dir = os.path.join(UPLOAD_DIR, name.replace(" ", "_"))
-        os.makedirs(student_dir, exist_ok=True)
-        
+        # Save the captured frame using storage service
         image_filename = f"{name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-        image_path = os.path.join(student_dir, image_filename)
         
-        cv2.imwrite(image_path, capture_result["frame"])
+        # Encode frame to bytes
+        ret, buffer = cv2.imencode('.jpg', capture_result["frame"])
+        if not ret:
+            raise HTTPException(status_code=500, detail="Failed to encode image")
+        
+        image_bytes = buffer.tobytes()
+        success, image_path = image_storage.save_image(image_bytes, name, image_filename)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save image")
+        
         logger.info(f"Saved registration image to {image_path}")
         
+        # Download image temporarily for face processing
+        temp_image_path = image_storage.download_image_temp(image_path)
+        if not temp_image_path:
+            image_storage.delete_image(image_path)
+            raise HTTPException(status_code=500, detail="Failed to process image")
+        
         # Add face to recognition system
-        success = face_service.add_known_face(name, image_path)
+        success = face_service.add_known_face(name, temp_image_path)
         if not success:
-            os.remove(image_path)
+            image_storage.delete_image(image_path)
+            if temp_image_path != image_path:
+                try:
+                    os.remove(temp_image_path)
+                except:
+                    pass
             raise HTTPException(status_code=500, detail="Failed to process face encoding")
         
         # Save updated encodings
         face_service.save_encodings(ENCODINGS_FILE)
+        
+        # Clean up temp file
+        if temp_image_path != image_path and (temp_image_path.startswith("/tmp") or "temp" in temp_image_path):
+            try:
+                os.remove(temp_image_path)
+            except:
+                pass
         
         # Save to database
         try:
@@ -713,16 +774,14 @@ async def live_register_student(
                 "name": student.name,
                 "image_path": student.image_path,
                 "message": "Student registered successfully using live camera"
-            }
+            }   
         except IntegrityError:
             db.rollback()
-            if os.path.exists(image_path):
-                os.remove(image_path)
+            image_storage.delete_image(image_path)
             raise HTTPException(status_code=409, detail="Student already registered")
         except SQLAlchemyError as e:
             db.rollback()
-            if os.path.exists(image_path):
-                os.remove(image_path)
+            image_storage.delete_image(image_path)
             logger.error(f"Database error: {str(e)}")
             raise HTTPException(status_code=500, detail="Database error occurred")
     

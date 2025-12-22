@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: attendease-backend
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: attendease-db
+          property: connectionString
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: UPLOAD_DIR
+        value: /tmp/student_images
+      - key: FACE_DETECTION_METHOD
+        value: both
+      - key: LOG_LEVEL
+        value: INFO
+      - key: ALLOWED_ORIGINS
+        value: "*"
+    healthCheckPath: /health
+
+databases:
+  - name: attendease-db
+    databaseName: attendease
+    user: attendease_user
+    plan: free

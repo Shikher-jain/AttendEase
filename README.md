@@ -348,6 +348,30 @@ To contribute to this project:
 
 This project is licensed under the MIT License.
 
+## � Deployment
+
+### Deploy to Render (Recommended for Production)
+
+AttendEase is ready to deploy on Render with PostgreSQL and Cloudinary integration!
+
+**Quick Deploy:**
+1. See [QUICK_DEPLOY.md](QUICK_DEPLOY.md) for a 5-minute checklist
+2. See [RENDER_DEPLOYMENT_GUIDE.md](RENDER_DEPLOYMENT_GUIDE.md) for comprehensive guide
+
+**What you need:**
+- GitHub repository
+- Cloudinary account (free tier available)
+- Render account (free tier available)
+
+**Features in production:**
+- PostgreSQL database (persistent)
+- Cloudinary image storage (CDN-backed)
+- HTTPS by default
+- Auto-scaling
+- Zero-downtime deployments
+
+---
+
 ## 👥 Support
 
 For issues, questions, or contributions:
@@ -368,6 +392,6 @@ For issues, questions, or contributions:
 
 ---
 
-**Version**: 2.0.0  
+**Version**: 2.1.0 (Render-Ready)  
 **Last Updated**: December 2025  
-**Built with**: FastAPI, Streamlit, face_recognition, SQLAlchemy
+**Built with**: FastAPI, Streamlit, face_recognition, SQLAlchemy, Cloudinary

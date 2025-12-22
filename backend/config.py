@@ -10,8 +10,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./attendance.db")
 
-# Upload configuration
+# Storage configuration
+STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")  # 'local' or 'cloudinary'
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", str(BASE_DIR / "student_images"))
+
+# Cloudinary configuration (for cloud storage)
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+
+# File upload configuration
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
