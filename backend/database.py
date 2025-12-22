@@ -4,6 +4,7 @@ Database models and configuration for the attendance system.
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.engine.url import make_url
 from .config import DATABASE_URL
 from .logger import logger
 import datetime
@@ -16,7 +17,12 @@ try:
         max_overflow=20,  # Maximum overflow connections
         echo=False  # Set to True for SQL query logging
     )
-    logger.info(f"Database engine created successfully: {DATABASE_URL}")
+    safe_database_url = DATABASE_URL
+    try:
+        safe_database_url = make_url(DATABASE_URL).render_as_string(hide_password=True)
+    except Exception:
+        pass
+    logger.info(f"Database engine created successfully: {safe_database_url}")
 except Exception as e:
     logger.error(f"Failed to create database engine: {str(e)}")
     raise

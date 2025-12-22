@@ -12,11 +12,11 @@ services:
           name: attendease-db
           property: connectionString
       - key: CLOUDINARY_CLOUD_NAME
-        value: decukgzzw
+        sync: false
       - key: CLOUDINARY_API_KEY
-        value: 158315573237381
+        sync: false
       - key: CLOUDINARY_API_SECRET
-        value: ioeAAKr4SSDlVqjkTwWpB194gSI
+        sync: false
       - key: STORAGE_TYPE
         value: cloudinary
       - key: UPLOAD_DIR

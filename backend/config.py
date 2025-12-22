@@ -4,12 +4,18 @@ Configuration management for the attendance system.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load local environment variables from .env (if present).
+# In production (e.g., Render), environment variables should be provided by the platform.
+load_dotenv(dotenv_path=BASE_DIR / ".env", override=False)
+
 # Database configuration
-# Default to PostgreSQL - must be configured via environment variable
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/attendease")
+# PostgreSQL only. Prefer setting DATABASE_URL via .env (local) or platform env vars (production).
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres@localhost:5432/attendease")
 
 # Storage configuration
 STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")  # 'local' or 'cloudinary'
