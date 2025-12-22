@@ -4,10 +4,9 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for dlib and OpenCV
+# Install system dependencies for dlib and OpenCV (excluding cmake - will install via pip)
 RUN apt-get update && apt-get install -y \
     build-essential \
-    cmake \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
@@ -18,8 +17,9 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
+# Upgrade pip and install newer cmake
 RUN pip install --upgrade pip
+RUN pip install cmake>=3.18
 
 # Install dlib first (compile from source with all dependencies available)
 RUN pip install dlib==19.24.2
