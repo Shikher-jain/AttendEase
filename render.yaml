@@ -15,15 +15,21 @@ services:
           name: attendease-db
           property: connectionString
       - key: CLOUDINARY_CLOUD_NAME
-        sync: false
+        value: decukgzzw
       - key: CLOUDINARY_API_KEY
-        sync: false
+        value: 158315573237381
       - key: CLOUDINARY_API_SECRET
-        sync: false
+        value: ioeAAKr4SSDlVqjkTwWpB194gSI
+      - key: STORAGE_TYPE
+        value: cloudinary
       - key: UPLOAD_DIR
         value: /tmp/student_images
       - key: FACE_DETECTION_METHOD
-        value: both
+        value: haar
+      - key: FACE_RECOGNITION_MODEL
+        value: hog
+      - key: FACE_RECOGNITION_TOLERANCE
+        value: 0.6
       - key: LOG_LEVEL
         value: INFO
       - key: ALLOWED_ORIGINS
