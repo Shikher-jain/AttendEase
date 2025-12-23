@@ -1,6 +1,6 @@
 """
-Streamlit frontend for the Student Attendance System.
-Enhanced with face recognition, camera support, and comprehensive error handling.
+Complete Streamlit frontend for Student Attendance System.
+Combines manual upload and live webcam features.
 """
 import streamlit as st
 import requests
@@ -10,6 +10,13 @@ import pandas as pd
 from datetime import datetime, timedelta
 import cv2
 import numpy as np
+import time
+import base64
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # MUST be the first Streamlit command
 st.set_page_config(
@@ -19,7 +26,7 @@ st.set_page_config(
 )
 
 # Configuration
-BACKEND_URL = st.sidebar.text_input("Backend URL", "http://localhost:8000")
+BACKEND_URL = st.sidebar.text_input("Backend URL", os.getenv("BACKEND_URL", "http://localhost:8000"))
 
 # Custom CSS
 st.markdown("""
@@ -45,15 +52,46 @@ st.markdown("""
         border: 1px solid #f5c6cb;
         color: #721c24;
     }
+    .live-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #ff0000;
+        animation: blink 1s infinite;
+        margin-right: 8px;
+    }
+    @keyframes blink {
+        0%, 50%, 100% { opacity: 1; }
+        25%, 75% { opacity: 0.3; }
+    }
+    .recognized-student {
+        padding: 10px;
+        margin: 5px 0;
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">📚 Student Attendance System</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">📚 AttendEase - Student Attendance System</div>', unsafe_allow_html=True)
 
 # Sidebar menu
 st.sidebar.title("Navigation")
-menu = ["Register Student", "Mark Attendance (Manual)", "Mark Attendance (Face Recognition)", "View Attendance", "Statistics", "System Health"]
-choice = st.sidebar.selectbox("Select Option", menu)
+menu_categories = {
+    "📝 Registration": ["Register Student (Upload)", "Register Student (Live Camera)"],
+    "✅ Attendance": ["Mark Attendance (Manual)", "Mark Attendance (Upload Photo)", "Mark Attendance (Live - Quick)", "Mark Attendance (Live - Session)"],
+    "📊 View & Reports": ["View Students", "View Attendance", "Statistics"],
+    "🔧 System": ["System Health", "Camera Status"]
+}
+
+# Flatten menu for selectbox
+all_options = []
+for category, options in menu_categories.items():
+    all_options.extend(options)
+
+choice = st.sidebar.selectbox("Select Option", all_options)
 
 
 def check_backend_health():
@@ -63,6 +101,40 @@ def check_backend_health():
         return response.status_code == 200
     except:
         return False
+
+
+def check_camera_status():
+    """Check if camera is active."""
+    try:
+        response = requests.get(f"{BACKEND_URL}/live/camera/status", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("is_active", False), data.get("active_sessions", 0)
+        return False, 0
+    except:
+        return False, 0
+
+
+def start_camera():
+    """Start the camera."""
+    try:
+        response = requests.post(f"{BACKEND_URL}/live/camera/start", timeout=10)
+        if response.status_code == 200:
+            return True, "Camera started successfully"
+        return False, response.json().get("detail", "Failed to start camera")
+    except Exception as e:
+        return False, str(e)
+
+
+def stop_camera():
+    """Stop the camera."""
+    try:
+        response = requests.post(f"{BACKEND_URL}/live/camera/stop", timeout=10)
+        if response.status_code == 200:
+            return True, "Camera stopped successfully"
+        return False, response.json().get("detail", "Failed to stop camera")
+    except Exception as e:
+        return False, str(e)
 
 
 def handle_api_error(response):
@@ -80,9 +152,36 @@ if not check_backend_health():
     st.info(f"Expected backend URL: {BACKEND_URL}")
     st.stop()
 
-# Page: Register Student
-if choice == "Register Student":
-    st.header("📝 Register New Student")
+# Camera control in sidebar (if camera-related page)
+if "Live" in choice or "Camera" in choice:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📹 Camera Control")
+    camera_status, active_sessions = check_camera_status()
+    
+    if camera_status:
+        st.sidebar.success("🟢 Camera is ACTIVE")
+        st.sidebar.write(f"Active sessions: {active_sessions}")
+        if st.sidebar.button("🛑 Stop Camera"):
+            success, msg = stop_camera()
+            if success:
+                st.sidebar.success(msg)
+                st.rerun()
+            else:
+                st.sidebar.error(msg)
+    else:
+        st.sidebar.warning("⚫ Camera is OFF")
+        if st.sidebar.button("▶️ Start Camera"):
+            success, msg = start_camera()
+            if success:
+                st.sidebar.success(msg)
+                st.rerun()
+            else:
+                st.sidebar.error(msg)
+
+# ========== REGISTRATION PAGES ==========
+
+if choice == "Register Student (Upload)":
+    st.header("📝 Register New Student (Upload Photo)")
     
     col1, col2 = st.columns(2)
     
@@ -98,379 +197,457 @@ if choice == "Register Student":
             help="Upload a clear photo with the student's face visible"
         )
         
-        if file:
+        if file is not None:
             image = Image.open(file)
             st.image(image, caption="Uploaded Photo", use_container_width=True)
+        
+        if st.button("Register Student", type="primary", use_container_width=True):
+            if not name:
+                st.error("Please enter student name")
+            elif not file:
+                st.error("Please upload a photo")
+            else:
+                with st.spinner("Registering student..."):
+                    try:
+                        files = {"file": (file.name, file.getvalue(), file.type)}
+                        data = {"name": name}
+                        response = requests.post(
+                            f"{BACKEND_URL}/register/",
+                            files=files,
+                            data=data,
+                            timeout=30
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.success(f"✅ Student registered successfully!")
+                            st.json(result)
+                        else:
+                            error_msg = handle_api_error(response)
+                            st.error(f"❌ Registration failed: {error_msg}")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
     
     with col2:
-        st.subheader("Registration Guidelines")
+        st.subheader("📋 Registration Guidelines")
         st.info("""
-        **Important Guidelines:**
-        - Photo should contain only ONE face
+        **Photo Requirements:**
+        - Clear, front-facing photo
+        - Good lighting
+        - Only one face in the photo
         - Face should be clearly visible
-        - Good lighting is essential
-        - Avoid sunglasses or face coverings
+        - Acceptable formats: JPG, JPEG, PNG
         - Maximum file size: 5MB
-        - Supported formats: JPG, JPEG, PNG
+        
+        **Name Requirements:**
+        - Use full name
+        - Maximum 100 characters
+        - Must be unique
         """)
+
+elif choice == "Register Student (Live Camera)":
+    st.header("📹 Register New Student (Live Camera)")
     
-    if st.button("✅ Register Student", type="primary"):
-        if not name or not name.strip():
-            st.error("❌ Please enter student name")
-        elif not file:
-            st.error("❌ Please upload a photo")
+    camera_active, _ = check_camera_status()
+    
+    if not camera_active:
+        st.warning("⚠️ Camera is not active. Please start the camera from the sidebar.")
+        st.stop()
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Live Camera Feed")
+        video_placeholder = st.empty()
+        video_url = f"{BACKEND_URL}/live/video/stream"
+        video_placeholder.image(video_url, use_container_width=True)
+    
+    with col2:
+        st.subheader("Student Information")
+        name = st.text_input("Student Name *", key="live_reg_name")
+        
+        st.caption("Position your face in the camera and click Capture")
+        
+        if st.button("📸 Capture & Register", type="primary", use_container_width=True):
+            if not name:
+                st.error("Please enter student name")
+            else:
+                with st.spinner("Capturing and registering..."):
+                    try:
+                        response = requests.post(
+                            f"{BACKEND_URL}/live/register",
+                            json={"name": name},
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.success(f"✅ {result['message']}")
+                            if "student" in result:
+                                st.json(result["student"])
+                        else:
+                            error_msg = handle_api_error(response)
+                            st.error(f"❌ Registration failed: {error_msg}")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+# ========== ATTENDANCE PAGES ==========
+
+elif choice == "Mark Attendance (Manual)":
+    st.header("✅ Mark Attendance (Manual Selection)")
+    
+    try:
+        response = requests.get(f"{BACKEND_URL}/students/", timeout=10)
+        if response.status_code == 200:
+            students = response.json()
+            
+            if not students:
+                st.warning("No students registered yet.")
+            else:
+                st.subheader("Select Student")
+                student_names = [s["name"] for s in students]
+                selected_name = st.selectbox("Choose student:", student_names)
+                
+                if st.button("Mark Attendance", type="primary"):
+                    selected_student = next(s for s in students if s["name"] == selected_name)
+                    
+                    try:
+                        response = requests.post(
+                            f"{BACKEND_URL}/attendance/",
+                            json={"student_id": selected_student["id"]},
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            st.success(f"✅ Attendance marked for {selected_name}")
+                            st.json(result)
+                        else:
+                            error_msg = handle_api_error(response)
+                            st.error(f"❌ Failed: {error_msg}")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
         else:
-            with st.spinner("Registering student..."):
+            st.error("Failed to fetch students")
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+
+elif choice == "Mark Attendance (Upload Photo)":
+    st.header("📸 Mark Attendance (Face Recognition - Upload)")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        file = st.file_uploader("Upload Photo", type=["jpg", "jpeg", "png"])
+        
+        if file is not None:
+            image = Image.open(file)
+            st.image(image, caption="Uploaded Photo", use_container_width=True)
+            
+            if st.button("Recognize & Mark Attendance", type="primary"):
+                with st.spinner("Recognizing faces..."):
+                    try:
+                        files = {"file": (file.name, file.getvalue(), file.type)}
+                        response = requests.post(
+                            f"{BACKEND_URL}/recognize/",
+                            files=files,
+                            timeout=30
+                        )
+                        
+                        if response.status_code == 200:
+                            results = response.json()
+                            st.success(f"✅ Recognized {len(results)} face(s)")
+                            
+                            for result in results:
+                                if result["name"] != "Unknown":
+                                    st.write(f"**{result['name']}** - Confidence: {result['confidence']:.2%}")
+                        else:
+                            error_msg = handle_api_error(response)
+                            st.error(f"❌ Recognition failed: {error_msg}")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+    
+    with col2:
+        st.info("""
+        **Instructions:**
+        1. Upload a clear photo
+        2. Photo can contain multiple faces
+        3. System will recognize registered students
+        4. Attendance will be marked automatically
+        """)
+
+elif choice == "Mark Attendance (Live - Quick)":
+    st.header("⚡ Quick Attendance (Live Camera)")
+    
+    camera_active, _ = check_camera_status()
+    
+    if not camera_active:
+        st.warning("⚠️ Camera is not active. Please start the camera from the sidebar.")
+        st.stop()
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Live Camera Feed")
+        video_placeholder = st.empty()
+        video_url = f"{BACKEND_URL}/live/video/stream"
+        video_placeholder.image(video_url, use_container_width=True)
+    
+    with col2:
+        st.subheader("Quick Actions")
+        
+        if st.button("📸 Capture & Mark Attendance", type="primary", use_container_width=True):
+            with st.spinner("Processing..."):
                 try:
-                    files = {"file": (file.name, file.getvalue(), file.type)}
-                    data = {"name": name.strip()}
                     response = requests.post(
-                        f"{BACKEND_URL}/register/", 
-                        data=data, 
-                        files=files,
-                        timeout=30
+                        f"{BACKEND_URL}/live/attendance/quick",
+                        timeout=10
                     )
                     
                     if response.status_code == 200:
                         result = response.json()
-                        st.success(f"✅ Student '{result['name']}' registered successfully!")
-                        st.balloons()
-                        st.json(result)
+                        
+                        if result["status"] == "success":
+                            st.success(f"✅ Marked attendance for {result['total_marked']} student(s)")
+                            for att in result["marked_attendance"]:
+                                st.write(f"**{att['student_name']}** - Confidence: {att['confidence']:.2%}")
+                        else:
+                            st.warning(result["message"])
                     else:
                         error_msg = handle_api_error(response)
-                        st.error(f"❌ Registration failed: {error_msg}")
-                except requests.exceptions.RequestException as e:
-                    st.error(f"❌ Network error: {str(e)}")
+                        st.error(f"❌ Failed: {error_msg}")
                 except Exception as e:
-                    st.error(f"❌ Unexpected error: {str(e)}")
+                    st.error(f"❌ Error: {str(e)}")
 
-# Page: Mark Attendance (Manual)
-elif choice == "Mark Attendance (Manual)":
-    st.header("✋ Mark Attendance (Manual Selection)")
+elif choice == "Mark Attendance (Live - Session)":
+    st.header("🔄 Continuous Attendance Session")
+    
+    camera_active, _ = check_camera_status()
+    
+    if not camera_active:
+        st.warning("⚠️ Camera is not active. Please start the camera from the sidebar.")
+        st.stop()
+    
+    st.info("Continuous session mode - automatically detects and marks attendance")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Live Feed")
+        video_placeholder = st.empty()
+        video_url = f"{BACKEND_URL}/live/video/stream"
+    
+    with col2:
+        st.subheader("Session Control")
+        session_name = st.text_input("Session Name", value=f"Session_{datetime.now().strftime('%Y%m%d_%H%M')}")
+        
+        if "session_active" not in st.session_state:
+            st.session_state.session_active = False
+        
+        if not st.session_state.session_active:
+            if st.button("▶️ Start Session", type="primary"):
+                st.session_state.session_active = True
+                st.rerun()
+        else:
+            if st.button("⏹️ Stop Session", type="secondary"):
+                st.session_state.session_active = False
+                st.rerun()
+    
+    if st.session_state.session_active:
+        video_placeholder.image(video_url, use_container_width=True)
+        st.success("🟢 Session is active")
+    else:
+        st.info("Click 'Start Session' to begin")
+
+# ========== VIEW & REPORTS PAGES ==========
+
+elif choice == "View Students":
+    st.header("👥 Registered Students")
     
     try:
-        with st.spinner("Loading students..."):
-            response = requests.get(f"{BACKEND_URL}/students/", timeout=10)
+        response = requests.get(f"{BACKEND_URL}/students/", timeout=10)
+        
+        if response.status_code == 200:
+            students = response.json()
             
+            if not students:
+                st.info("No students registered yet.")
+            else:
+                st.success(f"Total Students: {len(students)}")
+                
+                df = pd.DataFrame(students)
+                st.dataframe(df, use_container_width=True)
+                
+                # Delete student option
+                st.subheader("Delete Student")
+                student_to_delete = st.selectbox(
+                    "Select student to delete:",
+                    options=[s["name"] for s in students]
+                )
+                
+                if st.button("Delete Student", type="secondary"):
+                    student_id = next(s["id"] for s in students if s["name"] == student_to_delete)
+                    try:
+                        del_response = requests.delete(
+                            f"{BACKEND_URL}/students/{student_id}",
+                            timeout=10
+                        )
+                        
+                        if del_response.status_code == 200:
+                            st.success(f"✅ Deleted {student_to_delete}")
+                            st.rerun()
+                        else:
+                            st.error(handle_api_error(del_response))
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+        else:
+            st.error("Failed to fetch students")
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+
+elif choice == "View Attendance":
+    st.header("📋 Attendance Records")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        date_filter = st.date_input("Filter by Date", value=datetime.now())
+    
+    with col2:
+        try:
+            response = requests.get(f"{BACKEND_URL}/students/", timeout=10)
             if response.status_code == 200:
                 students = response.json()
-                
-                if not students:
-                    st.warning("⚠️ No students registered yet. Please register students first.")
-                else:
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        student_names = [s["name"] for s in students]
-                        selected = st.selectbox("Select Student", student_names)
-                        
-                        if st.button("✅ Mark Present", type="primary"):
-                            student_id = [s["id"] for s in students if s["name"] == selected][0]
-                            
-                            with st.spinner("Marking attendance..."):
-                                try:
-                                    response = requests.post(
-                                        f"{BACKEND_URL}/attendance/", 
-                                        params={"student_id": student_id},
-                                        timeout=10
-                                    )
-                                    
-                                    if response.status_code == 200:
-                                        result = response.json()
-                                        st.success(f"✅ Attendance marked for {result['student_name']}!")
-                                        st.info(f"Timestamp: {result['timestamp']}")
-                                    else:
-                                        error_msg = handle_api_error(response)
-                                        st.error(f"❌ Failed: {error_msg}")
-                                except Exception as e:
-                                    st.error(f"❌ Error: {str(e)}")
-                    
-                    with col2:
-                        st.subheader("Student Details")
-                        selected_student = [s for s in students if s["name"] == selected][0]
-                        st.write(f"**ID:** {selected_student['id']}")
-                        st.write(f"**Name:** {selected_student['name']}")
-            else:
-                error_msg = handle_api_error(response)
-                st.error(f"❌ Failed to load students: {error_msg}")
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-
-# Page: Mark Attendance (Face Recognition)
-elif choice == "Mark Attendance (Face Recognition)":
-    st.header("📸 Mark Attendance (Face Recognition)")
-    
-    st.info("""
-    **How it works:**
-    1. Upload a photo or take a picture using your camera
-    2. The system will automatically detect and recognize faces
-    3. Attendance will be marked for recognized students
-    """)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Upload Photo")
-        uploaded_file = st.file_uploader(
-            "Upload photo for recognition", 
-            type=["jpg", "jpeg", "png"],
-            help="Upload a photo containing student faces"
-        )
-        
-        if uploaded_file:
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Uploaded Photo", use_container_width=True)
-            
-            if st.button("🔍 Recognize and Mark Attendance", type="primary"):
-                with st.spinner("Processing face recognition..."):
-                    try:
-                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        response = requests.post(
-                            f"{BACKEND_URL}/attendance/recognize/",
-                            files=files,
-                            timeout=30
-                        )
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            
-                            if result["status"] == "success":
-                                st.success(f"✅ Successfully recognized {result['total_recognized']} student(s)!")
-                                
-                                # Display results in a table
-                                df = pd.DataFrame(result["attendance_records"])
-                                st.dataframe(df, use_container_width=True)
-                                st.balloons()
-                            else:
-                                st.warning(result.get("message", "No students recognized"))
-                        else:
-                            error_msg = handle_api_error(response)
-                            st.error(f"❌ Recognition failed: {error_msg}")
-                    except Exception as e:
-                        st.error(f"❌ Error: {str(e)}")
-    
-    with col2:
-        st.subheader("Camera Capture")
-        st.write("Use camera to capture and recognize faces")
-        
-        camera_photo = st.camera_input("Take a picture")
-        
-        if camera_photo:
-            if st.button("🔍 Process Camera Photo", type="primary"):
-                with st.spinner("Processing face recognition..."):
-                    try:
-                        files = {"file": ("camera.jpg", camera_photo.getvalue(), "image/jpeg")}
-                        response = requests.post(
-                            f"{BACKEND_URL}/attendance/recognize/",
-                            files=files,
-                            timeout=30
-                        )
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            
-                            if result["status"] == "success":
-                                st.success(f"✅ Successfully recognized {result['total_recognized']} student(s)!")
-                                
-                                df = pd.DataFrame(result["attendance_records"])
-                                st.dataframe(df, use_container_width=True)
-                                st.balloons()
-                            else:
-                                st.warning(result.get("message", "No students recognized"))
-                        else:
-                            error_msg = handle_api_error(response)
-                            st.error(f"❌ Recognition failed: {error_msg}")
-                    except Exception as e:
-                        st.error(f"❌ Error: {str(e)}")
-
-# Page: View Attendance
-elif choice == "View Attendance":
-    st.header("📊 Attendance Records")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Get all students for filter
-        try:
-            students_response = requests.get(f"{BACKEND_URL}/students/", timeout=10)
-            if students_response.status_code == 200:
-                students = students_response.json()
-                student_options = ["All Students"] + [s["name"] for s in students]
-                selected_student = st.selectbox("Filter by Student", student_options)
-            else:
-                selected_student = "All Students"
+                student_names = ["All Students"] + [s["name"] for s in students]
+                student_filter = st.selectbox("Filter by Student", student_names)
         except:
-            selected_student = "All Students"
-    
-    with col2:
-        date_filter = st.date_input("Filter by Date", value=None)
-    
-    with col3:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
-        refresh = st.button("🔄 Refresh", type="primary")
+            student_filter = "All Students"
     
     try:
-        with st.spinner("Loading attendance records..."):
-            params = {}
-            
-            if selected_student != "All Students":
-                student_id = [s["id"] for s in students if s["name"] == selected_student][0]
-                params["student_id"] = student_id
-            
-            if date_filter:
-                params["date"] = date_filter.strftime("%Y-%m-%d")
-            
-            response = requests.get(
-                f"{BACKEND_URL}/attendance/",
-                params=params,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                records = response.json()
-                
-                if not records:
-                    st.info("ℹ️ No attendance records found for the selected filters.")
-                else:
-                    st.success(f"✅ Found {len(records)} attendance record(s)")
-                    
-                    # Convert to DataFrame for better display
-                    df = pd.DataFrame(records)
-                    df['timestamp'] = pd.to_datetime(df['timestamp'])
-                    df = df.sort_values('timestamp', ascending=False)
-                    
-                    # Display as table
-                    st.dataframe(
-                        df[['student_name', 'timestamp']].rename(columns={
-                            'student_name': 'Student Name',
-                            'timestamp': 'Timestamp'
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                    
-                    # Download button
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download as CSV",
-                        data=csv,
-                        file_name=f"attendance_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-            else:
-                error_msg = handle_api_error(response)
-                st.error(f"❌ Failed to load records: {error_msg}")
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-
-# Page: Statistics
-elif choice == "Statistics":
-    st.header("📈 Attendance Statistics")
-    
-    try:
-        with st.spinner("Loading statistics..."):
-            # Get all students
-            students_response = requests.get(f"{BACKEND_URL}/students/", timeout=10)
-            # Get all attendance records
-            attendance_response = requests.get(f"{BACKEND_URL}/attendance/", timeout=10)
-            
-            if students_response.status_code == 200 and attendance_response.status_code == 200:
-                students = students_response.json()
-                records = attendance_response.json()
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("Total Students", len(students))
-                
-                with col2:
-                    st.metric("Total Attendance Records", len(records))
-                
-                with col3:
-                    # Calculate today's attendance
-                    today = datetime.now().date()
-                    today_records = [r for r in records if datetime.fromisoformat(r['timestamp']).date() == today]
-                    st.metric("Today's Attendance", len(today_records))
-                
-                # Attendance by student
-                if records:
-                    st.subheader("Attendance by Student")
-                    df = pd.DataFrame(records)
-                    attendance_counts = df['student_name'].value_counts().reset_index()
-                    attendance_counts.columns = ['Student Name', 'Attendance Count']
-                    st.bar_chart(attendance_counts.set_index('Student Name'))
-                    
-                    # Recent activity
-                    st.subheader("Recent Activity (Last 10 records)")
-                    recent_df = pd.DataFrame(records).tail(10)
-                    recent_df['timestamp'] = pd.to_datetime(recent_df['timestamp'])
-                    st.dataframe(
-                        recent_df[['student_name', 'timestamp']].sort_values('timestamp', ascending=False),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-            else:
-                st.error("❌ Failed to load statistics")
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-
-# Page: System Health
-elif choice == "System Health":
-    st.header("🏥 System Health Check")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Backend Status")
-        try:
-            response = requests.get(f"{BACKEND_URL}/health", timeout=5)
-            if response.status_code == 200:
-                st.success("✅ Backend is healthy")
-                health_data = response.json()
-                st.json(health_data)
-            else:
-                st.error("❌ Backend is unhealthy")
-        except Exception as e:
-            st.error(f"❌ Backend is not responding: {str(e)}")
-    
-    with col2:
-        st.subheader("System Information")
-        st.info(f"""
-        **Frontend:** Streamlit
-        **Backend URL:** {BACKEND_URL}
-        **Current Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-        """)
-    
-    # Test endpoints
-    st.subheader("Endpoint Tests")
-    if st.button("🧪 Test All Endpoints"):
-        endpoints = {
-            "Health Check": "/health",
-            "Students List": "/students/",
-            "Attendance Records": "/attendance/"
-        }
+        response = requests.get(f"{BACKEND_URL}/attendance/", timeout=10)
         
-        for name, endpoint in endpoints.items():
-            try:
-                response = requests.get(f"{BACKEND_URL}{endpoint}", timeout=5)
-                if response.status_code == 200:
-                    st.success(f"✅ {name}: OK")
+        if response.status_code == 200:
+            attendance_records = response.json()
+            
+            if not attendance_records:
+                st.info("No attendance records found.")
+            else:
+                df = pd.DataFrame(attendance_records)
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                
+                # Apply filters
+                if student_filter != "All Students":
+                    df = df[df['student_name'] == student_filter]
+                
+                df_filtered = df[df['timestamp'].dt.date == date_filter]
+                
+                st.success(f"Total Records: {len(df_filtered)}")
+                st.dataframe(df_filtered, use_container_width=True)
+                
+                # Download option
+                csv = df_filtered.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download as CSV",
+                    data=csv,
+                    file_name=f"attendance_{date_filter}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.error("Failed to fetch attendance records")
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+
+elif choice == "Statistics":
+    st.header("📊 Attendance Statistics")
+    
+    try:
+        response = requests.get(f"{BACKEND_URL}/attendance/stats", timeout=10)
+        
+        if response.status_code == 200:
+            stats = response.json()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Students", stats.get("total_students", 0))
+            with col2:
+                st.metric("Total Attendance", stats.get("total_attendance_records", 0))
+            with col3:
+                st.metric("Today's Attendance", stats.get("today_attendance", 0))
+            with col4:
+                st.metric("Avg Attendance Rate", f"{stats.get('average_attendance_rate', 0):.1f}%")
+            
+            # Charts
+            if "daily_attendance" in stats:
+                st.subheader("Daily Attendance Trend")
+                df = pd.DataFrame(stats["daily_attendance"])
+                st.line_chart(df.set_index("date"))
+        else:
+            st.error("Failed to fetch statistics")
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+
+# ========== SYSTEM PAGES ==========
+
+elif choice == "System Health":
+    st.header("🔧 System Health Check")
+    
+    try:
+        response = requests.get(f"{BACKEND_URL}/diagnostics", timeout=10)
+        
+        if response.status_code == 200:
+            diagnostics = response.json()
+            
+            st.subheader("System Status")
+            st.success("✅ Backend is healthy")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Face Recognition Service")
+                face_service = diagnostics["face_service"]
+                st.write(f"**Detection Method:** {face_service['detection_method']}")
+                st.write(f"**Model:** {face_service['model']}")
+                st.write(f"**Tolerance:** {face_service['tolerance']}")
+                st.write(f"**Known Faces:** {face_service['known_faces_count']}")
+                if face_service['known_faces']:
+                    st.write("**Registered Students:**")
+                    for name in face_service['known_faces']:
+                        st.write(f"- {name}")
+            
+            with col2:
+                st.subheader("Haar Cascade")
+                haar = diagnostics["haar_cascade"]
+                if haar['valid']:
+                    st.success("✅ Haar Cascade is valid")
                 else:
-                    st.error(f"❌ {name}: Failed (Status {response.status_code})")
-            except Exception as e:
-                st.error(f"❌ {name}: Error - {str(e)}")
+                    st.error("❌ Haar Cascade is invalid")
+                st.write(f"**Path:** {haar['path']}")
+                st.write(f"**Method:** {haar['configured_method']}")
+                
+                st.subheader("Storage")
+                storage = diagnostics["storage"]
+                st.write(f"**Type:** {storage['type']}")
+                st.write(f"**Upload Dir:** {storage['upload_dir']}")
+            
+            st.json(diagnostics)
+        else:
+            st.error("Failed to fetch diagnostics")
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
 
-# Footer
-st.sidebar.markdown("---")
-st.sidebar.info("""
-**Student Attendance System v2.0**
-
-Built with:
-- FastAPI (Backend)
-- Streamlit (Frontend)
-- Face Recognition
-- SQLite Database
-
-© 2025 All Rights Reserved
-""")
+elif choice == "Camera Status":
+    st.header("📹 Camera Status")
+    
+    camera_active, active_sessions = check_camera_status()
+    
+    if camera_active:
+        st.success("🟢 Camera is ACTIVE")
+        st.write(f"**Active Sessions:** {active_sessions}")
+        
+        st.subheader("Live Feed")
+        video_url = f"{BACKEND_URL}/live/video/stream"
+        st.image(video_url, use_container_width=True)
+    else:
+        st.warning("⚫ Camera is OFF")
+        st.info("Start the camera from the sidebar to view live feed.")

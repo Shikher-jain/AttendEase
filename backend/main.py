@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared.face_recognition_service import FaceRecognitionService
 from shared.live_video_service import LiveVideoService, LiveRecognitionSession
 from shared.image_storage_service import ImageStorageService
-import shutil
 import cv2
 import numpy as np
 import base64
@@ -42,6 +41,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Validate Haar Cascade file exists
+if not os.path.exists(HAAR_CASCADE_PATH):
+    logger.error(f"Haar Cascade file not found at: {HAAR_CASCADE_PATH}")
+    logger.warning("Face detection will not work without Haar Cascade file!")
+else:
+    logger.info(f"Haar Cascade file found at: {HAAR_CASCADE_PATH}")
 
 # Initialize face recognition service with Haar Cascade support
 face_service = FaceRecognitionService(haar_cascade_path=HAAR_CASCADE_PATH, detection_method=FACE_DETECTION_METHOD)
@@ -72,8 +78,15 @@ os.makedirs("logs", exist_ok=True)
 
 # Load existing face encodings
 if os.path.exists(ENCODINGS_FILE):
-    face_service.load_encodings(ENCODINGS_FILE)
-    logger.info("Loaded existing face encodings")
+    success = face_service.load_encodings(ENCODINGS_FILE)
+    if success:
+        logger.info(f"Loaded existing face encodings: {len(face_service.known_face_names)} faces")
+        logger.info(f"Known faces: {', '.join(face_service.known_face_names)}")
+    else:
+        logger.error("Failed to load face encodings")
+else:
+    logger.warning(f"No existing face encodings file found at {ENCODINGS_FILE}")
+    logger.info("Register students to create face encodings")
 
 # Pydantic models for request/response
 class LiveRegistrationRequest(BaseModel):
@@ -509,6 +522,60 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "version": "2.0.0"
     }
+
+@app.get("/diagnostics")
+async def diagnostics():
+    """
+    Diagnostic endpoint to check face recognition service status.
+    
+    Returns detailed information about:
+    - Haar Cascade file status
+    - Known face encodings count
+    - Detection method configuration
+    - Face recognition model settings
+    """
+    try:
+        haar_cascade_exists = os.path.exists(HAAR_CASCADE_PATH) if HAAR_CASCADE_PATH else False
+        haar_cascade_valid = False
+        
+        if haar_cascade_exists:
+            try:
+                test_cascade = cv2.CascadeClassifier(HAAR_CASCADE_PATH)
+                haar_cascade_valid = not test_cascade.empty()
+            except:
+                haar_cascade_valid = False
+        
+        return {
+            "status": "ok",
+            "timestamp": datetime.utcnow().isoformat(),
+            "face_service": {
+                "detection_method": face_service.detection_method,
+                "model": face_service.model,
+                "tolerance": face_service.tolerance,
+                "known_faces_count": len(face_service.known_face_names),
+                "known_faces": face_service.known_face_names,
+                "encodings_file_exists": os.path.exists(ENCODINGS_FILE)
+            },
+            "haar_cascade": {
+                "path": HAAR_CASCADE_PATH,
+                "exists": haar_cascade_exists,
+                "valid": haar_cascade_valid,
+                "configured_method": FACE_DETECTION_METHOD
+            },
+            "storage": {
+                "type": STORAGE_TYPE,
+                "upload_dir": UPLOAD_DIR,
+                "upload_dir_exists": os.path.exists(UPLOAD_DIR)
+            },
+            "warnings": []
+        }
+    except Exception as e:
+        logger.error(f"Error in diagnostics endpoint: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
 # ========== LIVE VIDEO ENDPOINTS ==========
 

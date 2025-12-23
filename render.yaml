@@ -22,7 +22,7 @@ services:
       - key: UPLOAD_DIR
         value: /tmp/student_images
       - key: FACE_DETECTION_METHOD
-        value: haar
+        value: both
       - key: FACE_RECOGNITION_MODEL
         value: hog
       - key: FACE_RECOGNITION_TOLERANCE

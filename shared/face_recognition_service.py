@@ -31,7 +31,29 @@ class FaceRecognitionService:
         self.detection_method = detection_method
         self.known_face_encodings: List[np.ndarray] = []
         self.known_face_names: List[str] = []
-        logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}, detection_method={detection_method}, haar_cascade={haar_cascade_path}")
+        
+        # Validate Haar Cascade if using haar or both methods
+        if detection_method in ("haar", "both") and haar_cascade_path:
+            if not Path(haar_cascade_path).exists():
+                logger.error(f"Haar Cascade file not found: {haar_cascade_path}")
+                logger.warning("Falling back to 'auto' detection method")
+                self.detection_method = "auto"
+            else:
+                # Test loading the cascade
+                try:
+                    test_cascade = cv2.CascadeClassifier(haar_cascade_path)
+                    if test_cascade.empty():
+                        logger.error(f"Haar Cascade file is invalid: {haar_cascade_path}")
+                        logger.warning("Falling back to 'auto' detection method")
+                        self.detection_method = "auto"
+                    else:
+                        logger.info(f"Haar Cascade loaded successfully from: {haar_cascade_path}")
+                except Exception as e:
+                    logger.error(f"Failed to load Haar Cascade: {str(e)}")
+                    logger.warning("Falling back to 'auto' detection method")
+                    self.detection_method = "auto"
+        
+        logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}, detection_method={self.detection_method}, haar_cascade={haar_cascade_path}")
     
     def detect_faces(self, image_path: str, method: str = "auto", haar_cascade_path: Optional[str] = None) -> List[Tuple[int, int, int, int]]:
         """
@@ -62,13 +84,18 @@ class FaceRecognitionService:
             # Haar cascade method
             if method in ("haar", "both"):
                 if not haar_cascade_path or not Path(haar_cascade_path).exists():
+                    logger.error(f"Haar Cascade path invalid or file missing: {haar_cascade_path}")
                     raise ValueError("Valid haar_cascade_path must be provided for Haar cascade detection.")
                 image_bgr = cv2.imread(image_path)
                 if image_bgr is None:
                     raise ValueError(f"Failed to load image: {image_path}")
                 gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
                 face_cascade = cv2.CascadeClassifier(haar_cascade_path)
+                if face_cascade.empty():
+                    logger.error(f"Haar Cascade failed to load from: {haar_cascade_path}")
+                    raise ValueError("Haar Cascade classifier failed to load")
                 haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                logger.info(f"Haar Cascade detected {len(haar_faces)} face(s)")
                 # Convert (x, y, w, h) to (top, right, bottom, left)
                 for (x, y, w, h) in haar_faces:
                     top, right, bottom, left = y, x + w, y + h, x
@@ -249,10 +276,22 @@ class FaceRecognitionService:
             # Final validation of RGB frame
             if rgb_frame.dtype != np.uint8:
                 logger.error(f"RGB frame dtype is {rgb_frame.dtype}, should be uint8")
-                return []
+                # Force conversion to uint8
+                rgb_frame = rgb_frame.astype(np.uint8)
             
+            # Ensure RGB frame is contiguous
             if not rgb_frame.flags['C_CONTIGUOUS']:
                 rgb_frame = np.ascontiguousarray(rgb_frame)
+            
+            # Additional validation - ensure RGB frame is valid 8-bit image
+            if rgb_frame.shape[2] != 3:
+                logger.error(f"RGB frame must have 3 channels, got {rgb_frame.shape[2]}")
+                return []
+            
+            # Verify the frame is in valid range [0, 255]
+            if rgb_frame.min() < 0 or rgb_frame.max() > 255:
+                logger.warning(f"RGB frame values out of range: min={rgb_frame.min()}, max={rgb_frame.max()}")
+                rgb_frame = np.clip(rgb_frame, 0, 255).astype(np.uint8)
             
             # Find faces using configured detection method
             face_locations = []
@@ -260,6 +299,11 @@ class FaceRecognitionService:
             # Use face_recognition library for detection (default/auto)
             if self.detection_method in ("auto", "both"):
                 try:
+                    # Double check before passing to face_recognition
+                    if rgb_frame.dtype != np.uint8 or not rgb_frame.flags['C_CONTIGUOUS']:
+                        logger.error("Frame validation failed before face_recognition call")
+                        raise ValueError("Invalid frame format")
+                    
                     face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
                 except Exception as e:
                     logger.error(f"face_recognition.face_locations failed: {str(e)}")
@@ -275,7 +319,11 @@ class FaceRecognitionService:
                 try:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     face_cascade = cv2.CascadeClassifier(self.haar_cascade_path)
+                    if face_cascade.empty():
+                        logger.error(f"Haar Cascade empty or invalid: {self.haar_cascade_path}")
+                        raise ValueError("Haar Cascade classifier is empty")
                     haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                    logger.debug(f"Haar Cascade detected {len(haar_faces)} face(s) in frame")
                     
                     # Convert (x, y, w, h) to (top, right, bottom, left) and add to face_locations
                     for (x, y, w, h) in haar_faces:
@@ -300,7 +348,11 @@ class FaceRecognitionService:
             
             # If no faces detected, return early
             if not face_locations:
+                logger.warning(f"No faces detected in frame using method: {self.detection_method}")
+                logger.debug(f"Frame shape: {frame.shape}, dtype: {frame.dtype}")
                 return []
+            
+            logger.info(f"Detected {len(face_locations)} face(s) in frame")
             
             # Encode detected faces
             try:
@@ -309,6 +361,11 @@ class FaceRecognitionService:
                 logger.error(f"face_recognition.face_encodings failed: {str(e)}")
                 logger.debug(f"Frame details: shape={rgb_frame.shape}, dtype={rgb_frame.dtype}")
                 return []
+            
+            # Check if we have any known faces
+            if len(self.known_face_encodings) == 0:
+                logger.warning("No known face encodings loaded! All faces will be marked as 'Unknown'")
+                logger.info("Please register students first to enable face recognition")
             
             results = []
             for face_encoding, face_location in zip(face_encodings, face_locations):

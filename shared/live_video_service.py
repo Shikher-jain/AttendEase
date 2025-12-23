@@ -48,6 +48,18 @@ class LiveVideoService:
             self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             self.camera.set(cv2.CAP_PROP_FPS, 30)
+            # Ensure camera outputs 8-bit BGR format
+            self.camera.set(cv2.CAP_PROP_FORMAT, -1)  # Auto format
+            self.camera.set(cv2.CAP_PROP_CONVERT_RGB, 0)  # Keep as BGR
+            
+            # Test read a frame to verify camera works
+            ret, test_frame = self.camera.read()
+            if not ret or test_frame is None:
+                logger.error("Camera opened but cannot read frames")
+                self.camera.release()
+                return False
+            
+            logger.info(f"Camera test frame: shape={test_frame.shape}, dtype={test_frame.dtype}")
             
             self.is_active = True
             logger.info(f"Camera {camera_index} started successfully")
@@ -107,7 +119,11 @@ class LiveVideoService:
             logger.error(f"Failed to convert frame to uint8, dtype is {frame.dtype}")
             return None
         
-        return frame
+        # Ensure values are in valid range
+        if frame.min() < 0 or frame.max() > 255:
+            logger.warning(f"Frame values out of range: min={frame.min()}, max={frame.max()}, clipping...")
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+        
         return frame
     
     def process_frame_for_recognition(self, frame: np.ndarray, draw_boxes: bool = True) -> Dict:
