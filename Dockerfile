@@ -27,8 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Upgrade pip and install build tools
 RUN pip install --upgrade pip setuptools wheel
 
-# Install dlib separately with verbose output (helps with debugging)
-RUN pip install --no-cache-dir --verbose dlib==19.24.2
+# Install dlib separately WITHOUT build isolation to use system cmake (not pip's cmake 4.x)
+# This is critical because dlib 19.24.2 fails with cmake >= 4.0
+RUN pip install --no-cache-dir --no-build-isolation dlib==19.24.2
 
 # Copy requirements and install remaining dependencies
 COPY requirements.txt .
