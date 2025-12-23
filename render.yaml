@@ -30,7 +30,7 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: ALLOWED_ORIGINS
-        value: "*"
+        value: "https://attendease-shikher-09.streamlit.app,http://localhost:8501"
     healthCheckPath: /health
 
 databases:
