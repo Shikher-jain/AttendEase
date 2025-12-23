@@ -12,12 +12,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     libopenblas-dev \
     liblapack-dev \
+    libx11-dev \
+    libgtk-3-dev \
+    libboost-python-dev \
     libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     libgl1 \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN pip install --upgrade pip
+# Upgrade pip and install build tools
+RUN pip install --upgrade pip setuptools wheel
+
+# Install dlib separately with verbose output (helps with debugging)
+RUN pip install --no-cache-dir --verbose dlib==19.24.2
 
 # Copy requirements and install remaining dependencies
 COPY requirements.txt .
