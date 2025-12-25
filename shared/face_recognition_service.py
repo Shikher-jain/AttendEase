@@ -34,16 +34,14 @@ class FaceRecognitionService:
         self.embedding_size: Optional[int] = None
 
         self._haar_cascade = None
-        self._mp_face_detection = mp.solutions.face_detection.FaceDetection(
-            model_selection=0,
-            min_detection_confidence=self.min_detection_confidence,
-        )
-        self._mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=self.min_detection_confidence,
-            min_tracking_confidence=self.min_tracking_confidence,
-        )
+        self._mp_face_detection = self._create_face_detection()
+        self._mp_face_mesh = self._create_face_mesh()
+
+        if self._mp_face_detection is None or self._mp_face_mesh is None:
+            raise RuntimeError(
+                "Failed to initialize Mediapipe face detection/mesh modules. "
+                "Ensure the 'mediapipe' package is installed correctly."
+            )
 
         method_aliases = {
             "auto": "mediapipe",
@@ -276,6 +274,46 @@ class FaceRecognitionService:
         if not rgb_frame.flags["C_CONTIGUOUS"]:
             rgb_frame = np.ascontiguousarray(rgb_frame)
         return rgb_frame
+
+    def _create_face_detection(self):
+        try:
+            return mp.solutions.face_detection.FaceDetection(
+                model_selection=0,
+                min_detection_confidence=self.min_detection_confidence,
+            )
+        except AttributeError:
+            try:
+                from mediapipe.python.solutions import face_detection as mp_face_detection
+
+                return mp_face_detection.FaceDetection(
+                    model_selection=0,
+                    min_detection_confidence=self.min_detection_confidence,
+                )
+            except Exception as exc:
+                logger.error(f"Failed to initialize Mediapipe face detection: {str(exc)}")
+                return None
+
+    def _create_face_mesh(self):
+        try:
+            return mp.solutions.face_mesh.FaceMesh(
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=self.min_detection_confidence,
+                min_tracking_confidence=self.min_tracking_confidence,
+            )
+        except AttributeError:
+            try:
+                from mediapipe.python.solutions import face_mesh as mp_face_mesh
+
+                return mp_face_mesh.FaceMesh(
+                    max_num_faces=1,
+                    refine_landmarks=True,
+                    min_detection_confidence=self.min_detection_confidence,
+                    min_tracking_confidence=self.min_tracking_confidence,
+                )
+            except Exception as exc:
+                logger.error(f"Failed to initialize Mediapipe face mesh: {str(exc)}")
+                return None
 
     def _validate_frame(self, frame: np.ndarray) -> np.ndarray:
         if frame is None or not isinstance(frame, np.ndarray) or frame.size == 0:
