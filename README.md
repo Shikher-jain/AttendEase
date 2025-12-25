@@ -22,7 +22,7 @@ A comprehensive face recognition-based attendance system with **real-time live v
 ### Technical Features
 -  Comprehensive error handling and validation
 -  Detailed logging for debugging and monitoring
--  **Hybrid face detection** (Mediapipe + optional Haar Cascade fallback)
+-  InsightFace ArcFace detection + embeddings (no dlib / DeepFace)
 -  Face detection with validation (single face per image)
 -  Database relationships and integrity constraints
 -  RESTful API with FastAPI
@@ -42,7 +42,7 @@ attendance_app/
  frontend/              # Frontend UI
     app.py            # Streamlit application
  shared/                # Shared utilities
-   face_recognition_service.py  # Mediapipe detection + landmark-based recognition logic
+    face_recognition_service.py  # InsightFace detection + embedding logic
     live_video_service.py        # Live video processing
  tests/                 # Test suite
     test_api.py       # API endpoint tests
@@ -50,7 +50,7 @@ attendance_app/
    test_face_recognition.py  # Face recognition tests (optional)
  student_images/        # Student photos storage
  logs/                  # Application logs
- haarcascade_frontalface_default.xml  # Haar Cascade classifier for face detection
+ haarcascade_frontalface_default.xml  # Legacy Haar Cascade (optional diagnostics)
  requirements.txt       # Python dependencies
  README.md             # This file
 ```
@@ -408,16 +408,16 @@ GET /live/frame/capture                  # Capture current frame
 **For Better Speed:**
 ```python
 # In config.py:
-FACE_EMBEDDING_MODEL = "Facenet"   # Smaller model, faster on CPU
-FACE_DETECTION_METHOD = "mediapipe"
+FACE_EMBEDDING_MODEL = "buffalo_m"   # Smaller InsightFace pack, faster on CPU
+FACE_DETECTION_METHOD = "insightface"
 ```
 
 **For Better Accuracy:**
 ```python
 # In config.py:
-FACE_EMBEDDING_MODEL = "Facenet512"  # Higher dimensional embeddings
+FACE_EMBEDDING_MODEL = "buffalo_l"  # Higher dimensional embeddings
 FACE_RECOGNITION_TOLERANCE = 0.6      # Lower = stricter matching
-FACE_DETECTION_METHOD = "both"       # Mediapipe + Haar fallback
+FACE_DETECTION_METHOD = "insightface"
 ```
 
 **Camera Settings:**
@@ -463,13 +463,11 @@ UPLOAD_DIR = "student_images"
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Face Recognition
-FACE_EMBEDDING_MODEL = "mediapipe-mesh"  # Mediapipe landmark embedding backend
+FACE_EMBEDDING_MODEL = "buffalo_l"   # InsightFace model pack
 FACE_RECOGNITION_TOLERANCE = 0.75     # Lower = more strict
 
 # Face Detection Method
-FACE_DETECTION_METHOD = "mediapipe"  # 'mediapipe', 'haar', or 'both'
-FACE_DETECTION_CONFIDENCE = 0.6
-HAAR_CASCADE_PATH = "haarcascade_frontalface_default.xml"
+FACE_DETECTION_METHOD = "insightface"
 
 # Logging
 LOG_LEVEL = "INFO"
@@ -677,4 +675,4 @@ For issues, questions, or contributions:
 
 **Version**: 2.1.0 (Production-Ready)  
 **Last Updated**: December 2025  
-**Built with**: FastAPI, Streamlit, Mediapipe, OpenCV, SQLAlchemy, Cloudinary
+**Built with**: FastAPI, Streamlit, InsightFace, OpenCV, SQLAlchemy, Cloudinary

@@ -42,14 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Validate Haar Cascade file exists
-if not os.path.exists(HAAR_CASCADE_PATH):
-    logger.error(f"Haar Cascade file not found at: {HAAR_CASCADE_PATH}")
-    logger.warning("Face detection will not work without Haar Cascade file!")
-else:
-    logger.info(f"Haar Cascade file found at: {HAAR_CASCADE_PATH}")
-
-# Initialize face recognition service with Mediapipe-only detection/embeddings
+# Initialize face recognition service with InsightFace detection/embeddings
 face_service = FaceRecognitionService(
     tolerance=FACE_RECOGNITION_TOLERANCE,
     haar_cascade_path=HAAR_CASCADE_PATH,
@@ -206,7 +199,7 @@ async def register_student(
             image_storage.delete_image(image_path)
             raise HTTPException(status_code=500, detail="Failed to process image")
         
-        # Detect and encode face using Mediapipe + optional Haar Cascade fallback
+        # Detect and encode face using InsightFace analyzers
         try:
             faces = face_service.detect_faces(temp_image_path, method=FACE_DETECTION_METHOD, haar_cascade_path=HAAR_CASCADE_PATH)
             if not faces:
@@ -531,42 +524,18 @@ async def health_check():
 
 @app.get("/diagnostics")
 async def diagnostics():
-    """
-    Diagnostic endpoint to check face recognition service status.
-    
-    Returns detailed information about:
-    - Haar Cascade file status
-    - Known face encodings count
-    - Detection method configuration
-    - Face recognition model settings
-    """
+    """Diagnostic endpoint to inspect face recognition and storage health."""
     try:
-        haar_cascade_exists = os.path.exists(HAAR_CASCADE_PATH) if HAAR_CASCADE_PATH else False
-        haar_cascade_valid = False
-        
-        if haar_cascade_exists:
-            try:
-                test_cascade = cv2.CascadeClassifier(HAAR_CASCADE_PATH)
-                haar_cascade_valid = not test_cascade.empty()
-            except:
-                haar_cascade_valid = False
-        
         return {
             "status": "ok",
             "timestamp": datetime.utcnow().isoformat(),
             "face_service": {
                 "detection_method": face_service.detection_method,
-                "model": face_service.model,
+                "embedding_model": face_service.embedding_model_name,
                 "tolerance": face_service.tolerance,
                 "known_faces_count": len(face_service.known_face_names),
                 "known_faces": face_service.known_face_names,
                 "encodings_file_exists": os.path.exists(ENCODINGS_FILE)
-            },
-            "haar_cascade": {
-                "path": HAAR_CASCADE_PATH,
-                "exists": haar_cascade_exists,
-                "valid": haar_cascade_valid,
-                "configured_method": FACE_DETECTION_METHOD
             },
             "storage": {
                 "type": STORAGE_TYPE,
