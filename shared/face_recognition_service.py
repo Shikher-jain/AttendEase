@@ -1,152 +1,110 @@
-"""
-Face recognition service using face_recognition library and OpenCV.
-"""
-import face_recognition
-import cv2
-import numpy as np
+"""Face recognition helpers powered by Mediapipe detection and DeepFace embeddings."""
+
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
-import pickle
+from typing import Dict, List, Optional, Tuple
+
+import cv2
 import logging
+import mediapipe as mp
+import numpy as np
+import pickle
+from deepface import DeepFace
 
 logger = logging.getLogger("attendance_app.face_recognition")
 
 
 class FaceRecognitionService:
-    """Service for face detection, encoding, and recognition."""
-    
-    def __init__(self, model: str = "hog", tolerance: float = 0.6, haar_cascade_path: Optional[str] = None, detection_method: str = "auto"):
-        """
-        Initialize the face recognition service.
-        
-        Args:
-            model: Face detection model ('hog' or 'cnn')
-            tolerance: Face matching tolerance (lower is more strict)
-            haar_cascade_path: Path to Haar Cascade XML file for face detection
-            detection_method: Detection method ('auto', 'haar', or 'both')
-        """
-        self.model = model
+    """Service for face detection, encoding, and recognition without dlib."""
+
+    def __init__(
+        self,
+        tolerance: float = 0.75,
+        haar_cascade_path: Optional[str] = None,
+        detection_method: str = "mediapipe",
+        embedding_model: str = "Facenet512",
+        min_detection_confidence: float = 0.6,
+    ):
         self.tolerance = tolerance
         self.haar_cascade_path = haar_cascade_path
-        self.detection_method = detection_method
+        self.embedding_model_name = embedding_model
+        self.min_detection_confidence = min_detection_confidence
         self.known_face_encodings: List[np.ndarray] = []
         self.known_face_names: List[str] = []
-        
-        # Validate Haar Cascade if using haar or both methods
-        if detection_method in ("haar", "both") and haar_cascade_path:
-            if not Path(haar_cascade_path).exists():
-                logger.error(f"Haar Cascade file not found: {haar_cascade_path}")
-                logger.warning("Falling back to 'auto' detection method")
-                self.detection_method = "auto"
-            else:
-                # Test loading the cascade
-                try:
-                    test_cascade = cv2.CascadeClassifier(haar_cascade_path)
-                    if test_cascade.empty():
-                        logger.error(f"Haar Cascade file is invalid: {haar_cascade_path}")
-                        logger.warning("Falling back to 'auto' detection method")
-                        self.detection_method = "auto"
-                    else:
-                        logger.info(f"Haar Cascade loaded successfully from: {haar_cascade_path}")
-                except Exception as e:
-                    logger.error(f"Failed to load Haar Cascade: {str(e)}")
-                    logger.warning("Falling back to 'auto' detection method")
-                    self.detection_method = "auto"
-        
-        logger.info(f"Initialized FaceRecognitionService with model={model}, tolerance={tolerance}, detection_method={self.detection_method}, haar_cascade={haar_cascade_path}")
+        self.embedding_size: Optional[int] = None
+
+        self._embedding_model = None
+        self._haar_cascade = None
+        self._mp_face_detection = mp.solutions.face_detection.FaceDetection(
+            model_selection=0,
+            min_detection_confidence=self.min_detection_confidence,
+        )
+
+        method_aliases = {
+            "auto": "mediapipe",
+            "mediapipe": "mediapipe",
+            "haar": "haar",
+            "both": "both",
+        }
+        normalized_method = method_aliases.get(detection_method.lower(), "mediapipe")
+
+        self.detection_method = normalized_method
+        if normalized_method in ("haar", "both"):
+            self._load_haar_classifier(self.haar_cascade_path)
+            if self._haar_cascade is None:
+                logger.warning("Haar cascade unavailable, falling back to Mediapipe only")
+                self.detection_method = "mediapipe"
+
+        logger.info(
+            "Initialized FaceRecognitionService (embedding=%s, tolerance=%.2f, detection=%s)",
+            self.embedding_model_name,
+            self.tolerance,
+            self.detection_method,
+        )
     
     def detect_faces(self, image_path: str, method: str = "auto", haar_cascade_path: Optional[str] = None) -> List[Tuple[int, int, int, int]]:
-        """
-        Detect faces in an image using either face_recognition or Haar cascade.
-        
-        Args:
-            image_path: Path to the image file
-            method: 'auto' (default, use face_recognition), 'haar' (use Haar cascade), or 'both' (return union of both)
-            haar_cascade_path: Path to Haar cascade XML file (required if method is 'haar' or 'both')
-        Returns:
-            List of face locations as (top, right, bottom, left) tuples
-        Raises:
-            FileNotFoundError: If image file doesn't exist
-            ValueError: If image cannot be loaded
-        """
-        try:
-            if not Path(image_path).exists():
-                raise FileNotFoundError(f"Image file not found: {image_path}")
-            
-            results = []
-            used_methods = []
-            # face_recognition method
-            if method in ("auto", "both"):
-                image = face_recognition.load_image_file(image_path)
-                fr_locations = face_recognition.face_locations(image, model=self.model)
-                results.extend(fr_locations)
-                used_methods.append("face_recognition")
-            # Haar cascade method
-            if method in ("haar", "both"):
-                if not haar_cascade_path or not Path(haar_cascade_path).exists():
-                    logger.error(f"Haar Cascade path invalid or file missing: {haar_cascade_path}")
-                    raise ValueError("Valid haar_cascade_path must be provided for Haar cascade detection.")
-                image_bgr = cv2.imread(image_path)
-                if image_bgr is None:
-                    raise ValueError(f"Failed to load image: {image_path}")
-                gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-                face_cascade = cv2.CascadeClassifier(haar_cascade_path)
-                if face_cascade.empty():
-                    logger.error(f"Haar Cascade failed to load from: {haar_cascade_path}")
-                    raise ValueError("Haar Cascade classifier failed to load")
-                haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-                logger.info(f"Haar Cascade detected {len(haar_faces)} face(s)")
-                # Convert (x, y, w, h) to (top, right, bottom, left)
-                for (x, y, w, h) in haar_faces:
-                    top, right, bottom, left = y, x + w, y + h, x
-                    results.append((top, right, bottom, left))
-                used_methods.append("haar_cascade")
-            logger.info(f"Detected {len(results)} face(s) in {image_path} using {', '.join(used_methods)}")
-            return results
-        except Exception as e:
-            logger.error(f"Error detecting faces in {image_path}: {str(e)}")
-            raise ValueError(f"Failed to detect faces: {str(e)}")
+        """Detect faces in an image using Mediapipe and/or Haar cascade."""
+
+        if not Path(image_path).exists():
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+
+        image_bgr = cv2.imread(image_path)
+        if image_bgr is None:
+            raise ValueError(f"Failed to load image: {image_path}")
+
+        return self._detect_faces_from_bgr(
+            image_bgr,
+            method=method,
+            cascade_path=haar_cascade_path,
+        )
     
     def encode_face(self, image_path: str) -> Optional[np.ndarray]:
-        """
-        Generate face encoding from an image.
-        
-        Args:
-            image_path: Path to the image file
-            
-        Returns:
-            Face encoding as numpy array, or None if no face detected
-            
-        Raises:
-            ValueError: If image processing fails
-        """
-        try:
-            if not Path(image_path).exists():
-                raise FileNotFoundError(f"Image file not found: {image_path}")
-            
-            # Load image using OpenCV first (handles BGR correctly)
-            image_bgr = cv2.imread(image_path)
-            if image_bgr is None:
-                raise ValueError(f"Failed to load image: {image_path}")
-            
-            # Convert BGR to RGB for face_recognition library
-            image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-            
-            # Encode faces
-            face_encodings = face_recognition.face_encodings(image_rgb, model=self.model)
-            
-            if not face_encodings:
-                logger.warning(f"No face detected in {image_path}")
-                return None
-            
-            if len(face_encodings) > 1:
-                logger.warning(f"Multiple faces detected in {image_path}, using first face")
-            
+        """Generate an embedding for the first face in the supplied image."""
+
+        if not Path(image_path).exists():
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+
+        image_bgr = cv2.imread(image_path)
+        if image_bgr is None:
+            raise ValueError(f"Failed to load image: {image_path}")
+
+        face_locations = self._detect_faces_from_bgr(image_bgr)
+        if not face_locations:
+            logger.warning(f"No face detected in {image_path}")
+            return None
+
+        if len(face_locations) > 1:
+            logger.warning(f"Multiple faces detected in {image_path}, using first face")
+
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        face_patch = self._extract_face(image_rgb, face_locations[0])
+        if face_patch is None:
+            logger.error("Failed to crop face from image for encoding")
+            return None
+
+        embedding = self._compute_embedding(face_patch)
+        if embedding is not None:
             logger.info(f"Successfully encoded face from {image_path}")
-            return face_encodings[0]
-        except Exception as e:
-            logger.error(f"Error encoding face from {image_path}: {str(e)}")
-            raise ValueError(f"Failed to encode face: {str(e)}")
+        return embedding
     
     def add_known_face(self, name: str, image_path: str) -> bool:
         """
@@ -185,41 +143,19 @@ class FaceRecognitionService:
         try:
             if not Path(image_path).exists():
                 raise FileNotFoundError(f"Image file not found: {image_path}")
-            
-            image = face_recognition.load_image_file(image_path)
-            face_locations = face_recognition.face_locations(image, model=self.model)
-            face_encodings = face_recognition.face_encodings(image, face_locations)
-            
-            results = []
-            for face_encoding, face_location in zip(face_encodings, face_locations):
-                matches = face_recognition.compare_faces(
-                    self.known_face_encodings, 
-                    face_encoding, 
-                    tolerance=self.tolerance
-                )
-                face_distances = face_recognition.face_distance(
-                    self.known_face_encodings, 
-                    face_encoding
-                )
-                
-                name = "Unknown"
-                confidence = 0.0
-                
-                if len(face_distances) > 0:
-                    best_match_index = np.argmin(face_distances)
-                    if matches[best_match_index]:
-                        name = self.known_face_names[best_match_index]
-                        confidence = 1.0 - face_distances[best_match_index]
-                
-                results.append({
-                    "name": name,
-                    "confidence": float(confidence),
-                    "location": face_location
-                })
-                
-                logger.info(f"Recognized face: {name} with confidence {confidence:.2f}")
-            
-            return results
+
+            image_bgr = cv2.imread(image_path)
+            if image_bgr is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+
+            face_locations = self._detect_faces_from_bgr(image_bgr)
+            if not face_locations:
+                logger.warning(f"No faces detected in {image_path}")
+                return []
+
+            image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            embeddings = self._encode_faces_from_frame(image_rgb, face_locations)
+            return self._match_embeddings(embeddings, face_locations)
         except Exception as e:
             logger.error(f"Error recognizing faces in {image_path}: {str(e)}")
             raise ValueError(f"Failed to recognize faces: {str(e)}")
@@ -235,166 +171,18 @@ class FaceRecognitionService:
             List of dictionaries with 'name', 'confidence', and 'location' for each face
         """
         try:
-            # Validate frame
-            if frame is None or frame.size == 0:
-                logger.error("Invalid frame: None or empty")
-                return []
-            
-            # Ensure frame is a numpy array
-            if not isinstance(frame, np.ndarray):
-                logger.error("Frame is not a numpy array")
-                return []
-            
-            # Make a copy to avoid modifying original frame
-            frame = frame.copy()
-            
-            # Ensure frame has correct shape (height, width, 3)
-            if len(frame.shape) != 3 or frame.shape[2] != 3:
-                logger.error(f"Invalid frame shape: {frame.shape}, expected (H, W, 3)")
-                return []
-            
-            # Ensure frame is contiguous in memory
-            if not frame.flags['C_CONTIGUOUS']:
-                frame = np.ascontiguousarray(frame)
-            
-            # Ensure frame is uint8 (must be done BEFORE cvtColor)
-            if frame.dtype != np.uint8:
-                logger.warning(f"Frame dtype is {frame.dtype}, converting to uint8")
-                # Normalize to 0-255 range if needed
-                if frame.max() <= 1.0:
-                    frame = (frame * 255).astype(np.uint8)
-                else:
-                    frame = np.clip(frame, 0, 255).astype(np.uint8)
-            
-            # Convert BGR to RGB for face_recognition library
-            try:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            except cv2.error as e:
-                logger.error(f"cvtColor failed: {str(e)}, frame shape: {frame.shape}, dtype: {frame.dtype}")
-                return []
-            
-            # Final validation of RGB frame
-            if rgb_frame.dtype != np.uint8:
-                logger.error(f"RGB frame dtype is {rgb_frame.dtype}, should be uint8")
-                # Force conversion to uint8
-                rgb_frame = rgb_frame.astype(np.uint8)
-            
-            # Ensure RGB frame is contiguous
-            if not rgb_frame.flags['C_CONTIGUOUS']:
+            validated_frame = self._validate_frame(frame)
+            rgb_frame = cv2.cvtColor(validated_frame, cv2.COLOR_BGR2RGB)
+            if not rgb_frame.flags["C_CONTIGUOUS"]:
                 rgb_frame = np.ascontiguousarray(rgb_frame)
-            
-            # Additional validation - ensure RGB frame is valid 8-bit image
-            if rgb_frame.shape[2] != 3:
-                logger.error(f"RGB frame must have 3 channels, got {rgb_frame.shape[2]}")
-                return []
-            
-            # Verify the frame is in valid range [0, 255]
-            if rgb_frame.min() < 0 or rgb_frame.max() > 255:
-                logger.warning(f"RGB frame values out of range: min={rgb_frame.min()}, max={rgb_frame.max()}")
-                rgb_frame = np.clip(rgb_frame, 0, 255).astype(np.uint8)
-            
-            # Find faces using configured detection method
-            face_locations = []
-            
-            # Use face_recognition library for detection (default/auto)
-            if self.detection_method in ("auto", "both"):
-                try:
-                    # Double check before passing to face_recognition
-                    if rgb_frame.dtype != np.uint8 or not rgb_frame.flags['C_CONTIGUOUS']:
-                        logger.error("Frame validation failed before face_recognition call")
-                        raise ValueError("Invalid frame format")
-                    
-                    face_locations = face_recognition.face_locations(rgb_frame, model=self.model)
-                except Exception as e:
-                    logger.error(f"face_recognition.face_locations failed: {str(e)}")
-                    logger.debug(f"Frame details: shape={rgb_frame.shape}, dtype={rgb_frame.dtype}, contiguous={rgb_frame.flags['C_CONTIGUOUS']}")
-                    # Fall back to Haar Cascade if available
-                    if self.detection_method == "both" and self.haar_cascade_path:
-                        logger.info("Falling back to Haar Cascade only")
-                    elif self.detection_method == "auto":
-                        return []
-            
-            # Add Haar Cascade detection if configured
-            if self.detection_method in ("haar", "both") and self.haar_cascade_path:
-                try:
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    face_cascade = cv2.CascadeClassifier(self.haar_cascade_path)
-                    if face_cascade.empty():
-                        logger.error(f"Haar Cascade empty or invalid: {self.haar_cascade_path}")
-                        raise ValueError("Haar Cascade classifier is empty")
-                    haar_faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-                    logger.debug(f"Haar Cascade detected {len(haar_faces)} face(s) in frame")
-                    
-                    # Convert (x, y, w, h) to (top, right, bottom, left) and add to face_locations
-                    for (x, y, w, h) in haar_faces:
-                        top, right, bottom, left = y, x + w, y + h, x
-                        haar_location = (top, right, bottom, left)
-                        
-                        # Check if this location overlaps with existing detections (avoid duplicates)
-                        is_duplicate = False
-                        for existing_loc in face_locations:
-                            # Simple overlap check
-                            if (abs(existing_loc[0] - top) < 30 and 
-                                abs(existing_loc[1] - right) < 30 and
-                                abs(existing_loc[2] - bottom) < 30 and
-                                abs(existing_loc[3] - left) < 30):
-                                is_duplicate = True
-                                break
-                        
-                        if not is_duplicate:
-                            face_locations.append(haar_location)
-                except Exception as e:
-                    logger.error(f"Haar Cascade detection failed: {str(e)}")
-            
-            # If no faces detected, return early
+
+            face_locations = self._detect_faces_from_bgr(validated_frame)
             if not face_locations:
                 logger.warning(f"No faces detected in frame using method: {self.detection_method}")
-                logger.debug(f"Frame shape: {frame.shape}, dtype: {frame.dtype}")
                 return []
-            
-            logger.info(f"Detected {len(face_locations)} face(s) in frame")
-            
-            # Encode detected faces
-            try:
-                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-            except Exception as e:
-                logger.error(f"face_recognition.face_encodings failed: {str(e)}")
-                logger.debug(f"Frame details: shape={rgb_frame.shape}, dtype={rgb_frame.dtype}")
-                return []
-            
-            # Check if we have any known faces
-            if len(self.known_face_encodings) == 0:
-                logger.warning("No known face encodings loaded! All faces will be marked as 'Unknown'")
-                logger.info("Please register students first to enable face recognition")
-            
-            results = []
-            for face_encoding, face_location in zip(face_encodings, face_locations):
-                matches = face_recognition.compare_faces(
-                    self.known_face_encodings, 
-                    face_encoding, 
-                    tolerance=self.tolerance
-                )
-                face_distances = face_recognition.face_distance(
-                    self.known_face_encodings, 
-                    face_encoding
-                )
-                
-                name = "Unknown"
-                confidence = 0.0
-                
-                if len(face_distances) > 0:
-                    best_match_index = np.argmin(face_distances)
-                    if matches[best_match_index]:
-                        name = self.known_face_names[best_match_index]
-                        confidence = 1.0 - face_distances[best_match_index]
-                
-                results.append({
-                    "name": name,
-                    "confidence": float(confidence),
-                    "location": face_location
-                })
-            
-            return results
+
+            embeddings = self._encode_faces_from_frame(rgb_frame, face_locations)
+            return self._match_embeddings(embeddings, face_locations)
         except Exception as e:
             logger.error(f"Error recognizing faces from camera: {str(e)}")
             return []
@@ -412,7 +200,9 @@ class FaceRecognitionService:
         try:
             data = {
                 "encodings": self.known_face_encodings,
-                "names": self.known_face_names
+                "names": self.known_face_names,
+                "embedding_model": self.embedding_model_name,
+                "embedding_size": self.embedding_size,
             }
             with open(filepath, "wb") as f:
                 pickle.dump(data, f)
@@ -439,9 +229,19 @@ class FaceRecognitionService:
             
             with open(filepath, "rb") as f:
                 data = pickle.load(f)
-            
-            self.known_face_encodings = data["encodings"]
-            self.known_face_names = data["names"]
+
+            encodings = [np.array(enc, dtype=np.float32) for enc in data.get("encodings", [])]
+            names = data.get("names", [])
+
+            if encodings and data.get("embedding_size"):
+                self.embedding_size = int(data["embedding_size"])
+
+            if encodings and self.embedding_size and len(encodings[0]) != self.embedding_size:
+                logger.warning("Stored encodings dimension mismatch. Please re-register students.")
+                return False
+
+            self.known_face_encodings = encodings
+            self.known_face_names = names
             logger.info(f"Loaded {len(self.known_face_names)} face encodings from {filepath}")
             return True
         except Exception as e:
@@ -453,3 +253,256 @@ class FaceRecognitionService:
         self.known_face_encodings = []
         self.known_face_names = []
         logger.info("Cleared all known face encodings")
+
+    def detect_faces_in_frame(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """Detect faces from an already captured frame."""
+
+        try:
+            validated = self._validate_frame(frame)
+            return self._detect_faces_from_bgr(validated)
+        except Exception as e:
+            logger.error(f"Failed to detect faces from frame: {str(e)}")
+            return []
+
+    def _prepare_frame_rgb(self, frame: np.ndarray) -> np.ndarray:
+        validated = self._validate_frame(frame)
+        rgb_frame = cv2.cvtColor(validated, cv2.COLOR_BGR2RGB)
+        if not rgb_frame.flags["C_CONTIGUOUS"]:
+            rgb_frame = np.ascontiguousarray(rgb_frame)
+        return rgb_frame
+
+    def _validate_frame(self, frame: np.ndarray) -> np.ndarray:
+        if frame is None or not isinstance(frame, np.ndarray) or frame.size == 0:
+            raise ValueError("Invalid frame provided")
+
+        if len(frame.shape) != 3 or frame.shape[2] != 3:
+            raise ValueError(f"Invalid frame shape: {frame.shape}")
+
+        if frame.dtype != np.uint8:
+            if frame.max() <= 1.0:
+                frame = (frame * 255).astype(np.uint8)
+            else:
+                frame = np.clip(frame, 0, 255).astype(np.uint8)
+
+        if not frame.flags["C_CONTIGUOUS"]:
+            frame = np.ascontiguousarray(frame)
+
+        return frame
+
+    def _detect_faces_from_bgr(
+        self,
+        frame_bgr: np.ndarray,
+        method: Optional[str] = None,
+        cascade_path: Optional[str] = None,
+    ) -> List[Tuple[int, int, int, int]]:
+        method_aliases = {
+            "auto": "mediapipe",
+            "mediapipe": "mediapipe",
+            "haar": "haar",
+            "both": "both",
+        }
+        method_to_use = method_aliases.get((method or self.detection_method).lower(), "mediapipe")
+
+        locations: List[Tuple[int, int, int, int]] = []
+
+        if method_to_use in ("mediapipe", "both"):
+            rgb_frame = self._prepare_frame_rgb(frame_bgr)
+            locations.extend(self._detect_with_mediapipe(rgb_frame))
+
+        if method_to_use in ("haar", "both"):
+            cascade = self._load_haar_classifier(cascade_path)
+            if cascade is not None:
+                locations.extend(self._detect_with_haar(frame_bgr, cascade))
+
+        return self._deduplicate_locations(locations)
+
+    def _detect_with_mediapipe(self, rgb_frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        detections = self._mp_face_detection.process(rgb_frame)
+        if not detections.detections:
+            return []
+
+        height, width, _ = rgb_frame.shape
+        locations: List[Tuple[int, int, int, int]] = []
+
+        for detection in detections.detections:
+            bbox = detection.location_data.relative_bounding_box
+            x_min = max(0.0, bbox.xmin)
+            y_min = max(0.0, bbox.ymin)
+            w = min(1.0, bbox.width)
+            h = min(1.0, bbox.height)
+
+            left = int(x_min * width)
+            top = int(y_min * height)
+            right = int(min(width, (x_min + w) * width))
+            bottom = int(min(height, (y_min + h) * height))
+
+            if right - left > 0 and bottom - top > 0:
+                locations.append((top, right, bottom, left))
+
+        return locations
+
+    def _detect_with_haar(
+        self,
+        frame_bgr: np.ndarray,
+        cascade: cv2.CascadeClassifier,
+    ) -> List[Tuple[int, int, int, int]]:
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+        locations: List[Tuple[int, int, int, int]] = []
+        for (x, y, w, h) in faces:
+            top, right, bottom, left = y, x + w, y + h, x
+            locations.append((top, right, bottom, left))
+        return locations
+
+    def _load_haar_classifier(self, cascade_path: Optional[str]) -> Optional[cv2.CascadeClassifier]:
+        target_path = cascade_path or self.haar_cascade_path
+        if not target_path or not Path(target_path).exists():
+            return None
+
+        if self._haar_cascade is not None and target_path == self.haar_cascade_path:
+            return self._haar_cascade
+
+        cascade = cv2.CascadeClassifier(target_path)
+        if cascade.empty():
+            logger.error(f"Haar Cascade file is invalid: {target_path}")
+            return None
+
+        self._haar_cascade = cascade
+        self.haar_cascade_path = target_path
+        logger.info(f"Loaded Haar Cascade from {target_path}")
+        return self._haar_cascade
+
+    def _deduplicate_locations(self, locations: List[Tuple[int, int, int, int]]) -> List[Tuple[int, int, int, int]]:
+        filtered: List[Tuple[int, int, int, int]] = []
+        for candidate in locations:
+            is_duplicate = False
+            for existing in filtered:
+                if self._boxes_overlap(candidate, existing):
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                filtered.append(candidate)
+        return filtered
+
+    @staticmethod
+    def _boxes_overlap(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int]) -> bool:
+        return (
+            abs(box_a[0] - box_b[0]) < 30
+            and abs(box_a[1] - box_b[1]) < 30
+            and abs(box_a[2] - box_b[2]) < 30
+            and abs(box_a[3] - box_b[3]) < 30
+        )
+
+    def _encode_faces_from_frame(
+        self,
+        frame_rgb: np.ndarray,
+        face_locations: List[Tuple[int, int, int, int]],
+    ) -> List[Optional[np.ndarray]]:
+        embeddings: List[Optional[np.ndarray]] = []
+        for location in face_locations:
+            face_patch = self._extract_face(frame_rgb, location)
+            if face_patch is None:
+                embeddings.append(None)
+                continue
+            embeddings.append(self._compute_embedding(face_patch))
+        return embeddings
+
+    def _extract_face(self, frame_rgb: np.ndarray, location: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
+        top, right, bottom, left = location
+        h, w, _ = frame_rgb.shape
+
+        top = max(0, min(h, top))
+        bottom = max(0, min(h, bottom))
+        left = max(0, min(w, left))
+        right = max(0, min(w, right))
+
+        if bottom <= top or right <= left:
+            return None
+
+        face = frame_rgb[top:bottom, left:right]
+        if face.size == 0:
+            return None
+
+        if not face.flags["C_CONTIGUOUS"]:
+            face = np.ascontiguousarray(face)
+        return face
+
+    def _compute_embedding(self, face_rgb: np.ndarray) -> Optional[np.ndarray]:
+        try:
+            model = self._ensure_embedding_model()
+            representations = DeepFace.represent(
+                img_path=face_rgb,
+                model_name=self.embedding_model_name,
+                detector_backend="skip",
+                enforce_detection=False,
+                normalization="base",
+                align=True,
+                model=model,
+            )
+
+            if not representations:
+                return None
+
+            embedding = np.array(representations[0]["embedding"], dtype=np.float32)
+            if self.embedding_size is None:
+                self.embedding_size = embedding.shape[0]
+            return embedding
+        except Exception as e:
+            logger.error(f"Failed to compute embedding: {str(e)}")
+            return None
+
+    def _ensure_embedding_model(self):
+        if self._embedding_model is None:
+            logger.info("Loading DeepFace model '%s'", self.embedding_model_name)
+            self._embedding_model = DeepFace.build_model(self.embedding_model_name)
+            try:
+                self.embedding_size = int(self._embedding_model.outputs[0].shape[-1])
+            except Exception:
+                self.embedding_size = None
+        return self._embedding_model
+
+    def _match_embeddings(
+        self,
+        embeddings: List[Optional[np.ndarray]],
+        locations: List[Tuple[int, int, int, int]],
+    ) -> List[Dict[str, any]]:
+        results: List[Dict[str, any]] = []
+
+        if not embeddings:
+            return results
+
+        if not self.known_face_encodings:
+            for location in locations:
+                results.append({"name": "Unknown", "confidence": 0.0, "location": location})
+            logger.warning("No known face encodings loaded; all matches will be Unknown")
+            return results
+
+        known_matrix = np.stack(self.known_face_encodings)
+
+        for embedding, location in zip(embeddings, locations):
+            if embedding is None:
+                results.append({"name": "Unknown", "confidence": 0.0, "location": location})
+                continue
+
+            distances = np.linalg.norm(known_matrix - embedding, axis=1)
+            best_index = int(np.argmin(distances))
+            best_distance = float(distances[best_index])
+
+            if best_distance <= self.tolerance:
+                name = self.known_face_names[best_index]
+                confidence = max(0.0, 1.0 - (best_distance / max(self.tolerance, 1e-6)))
+            else:
+                name = "Unknown"
+                confidence = 0.0
+
+            results.append({"name": name, "confidence": float(confidence), "location": location})
+
+        return results
+
+    def __del__(self):
+        try:
+            if self._mp_face_detection:
+                self._mp_face_detection.close()
+        except Exception:
+            pass

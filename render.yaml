@@ -22,10 +22,12 @@ services:
       - key: UPLOAD_DIR
         value: /tmp/student_images
       - key: FACE_DETECTION_METHOD
-        value: both
-      - key: FACE_RECOGNITION_MODEL
-        value: hog
+        value: mediapipe
+      - key: FACE_EMBEDDING_MODEL
+        value: Facenet512
       - key: FACE_RECOGNITION_TOLERANCE
+        value: 0.75
+      - key: FACE_DETECTION_CONFIDENCE
         value: 0.6
       - key: LOG_LEVEL
         value: INFO

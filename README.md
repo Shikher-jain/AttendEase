@@ -22,7 +22,7 @@ A comprehensive face recognition-based attendance system with **real-time live v
 ### Technical Features
 -  Comprehensive error handling and validation
 -  Detailed logging for debugging and monitoring
--  **Hybrid face detection** (face_recognition library + Haar Cascade for improved accuracy)
+-  **Hybrid face detection** (Mediapipe + optional Haar Cascade fallback)
 -  Face detection with validation (single face per image)
 -  Database relationships and integrity constraints
 -  RESTful API with FastAPI
@@ -42,12 +42,12 @@ attendance_app/
  frontend/              # Frontend UI
     app.py            # Streamlit application
  shared/                # Shared utilities
-    face_recognition_service.py  # Face recognition logic
+   face_recognition_service.py  # Mediapipe + DeepFace face recognition logic
     live_video_service.py        # Live video processing
  tests/                 # Test suite
     test_api.py       # API endpoint tests
     test_database.py  # Database model tests
-    test_face_recognition.py  # Face recognition tests
+   test_face_recognition.py  # Face recognition tests (optional)
  student_images/        # Student photos storage
  logs/                  # Application logs
  haarcascade_frontalface_default.xml  # Haar Cascade classifier for face detection
@@ -408,14 +408,16 @@ GET /live/frame/capture                  # Capture current frame
 **For Better Speed:**
 ```python
 # In config.py:
-FACE_RECOGNITION_MODEL = "hog"  # Faster, good for CPU
+FACE_EMBEDDING_MODEL = "Facenet"   # Smaller model, faster on CPU
+FACE_DETECTION_METHOD = "mediapipe"
 ```
 
 **For Better Accuracy:**
 ```python
 # In config.py:
-FACE_RECOGNITION_MODEL = "cnn"  # More accurate, requires GPU
-FACE_RECOGNITION_TOLERANCE = 0.5  # Lower = stricter
+FACE_EMBEDDING_MODEL = "Facenet512"  # Higher dimensional embeddings
+FACE_RECOGNITION_TOLERANCE = 0.6      # Lower = stricter matching
+FACE_DETECTION_METHOD = "both"       # Mediapipe + Haar fallback
 ```
 
 **Camera Settings:**
@@ -461,11 +463,12 @@ UPLOAD_DIR = "student_images"
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Face Recognition
-FACE_RECOGNITION_MODEL = "hog"  # 'hog' or 'cnn'
-FACE_RECOGNITION_TOLERANCE = 0.6  # Lower = more strict
+FACE_EMBEDDING_MODEL = "Facenet512"  # DeepFace embedding backbone
+FACE_RECOGNITION_TOLERANCE = 0.75     # Lower = more strict
 
 # Face Detection Method
-FACE_DETECTION_METHOD = "both"  # 'auto', 'haar', or 'both'
+FACE_DETECTION_METHOD = "mediapipe"  # 'mediapipe', 'haar', or 'both'
+FACE_DETECTION_CONFIDENCE = 0.6
 HAAR_CASCADE_PATH = "haarcascade_frontalface_default.xml"
 
 # Logging
@@ -674,4 +677,4 @@ For issues, questions, or contributions:
 
 **Version**: 2.1.0 (Production-Ready)  
 **Last Updated**: December 2025  
-**Built with**: FastAPI, Streamlit, face_recognition, SQLAlchemy, Cloudinary
+**Built with**: FastAPI, Streamlit, Mediapipe, DeepFace, SQLAlchemy, Cloudinary

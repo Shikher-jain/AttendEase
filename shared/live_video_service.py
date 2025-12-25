@@ -235,24 +235,16 @@ class LiveVideoService:
             if frame is None:
                 continue
             
-            # Detect faces
-            try:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                import face_recognition
-                face_locations = face_recognition.face_locations(rgb_frame)
-                
-                # We want exactly one face
-                if len(face_locations) == 1:
-                    logger.info(f"Good registration frame captured on attempt {attempt + 1}")
-                    return {
-                        "success": True,
-                        "frame": frame,
-                        "face_location": face_locations[0],
-                        "message": "Single face detected"
-                    }
-            except Exception as e:
-                logger.error(f"Error detecting face: {str(e)}")
-                continue
+            face_locations = self.face_service.detect_faces_in_frame(frame)
+
+            if len(face_locations) == 1:
+                logger.info(f"Good registration frame captured on attempt {attempt + 1}")
+                return {
+                    "success": True,
+                    "frame": frame,
+                    "face_location": face_locations[0],
+                    "message": "Single face detected"
+                }
         
         logger.warning("Failed to capture good registration frame")
         return None

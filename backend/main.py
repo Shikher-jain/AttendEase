@@ -6,8 +6,9 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from .database import SessionLocal, Student, Attendance
 from .logger import logger
 from .config import (
-    UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS, 
-    HAAR_CASCADE_PATH, FACE_DETECTION_METHOD,
+    UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS,
+    HAAR_CASCADE_PATH, FACE_DETECTION_METHOD, FACE_RECOGNITION_TOLERANCE,
+    FACE_EMBEDDING_MODEL, FACE_DETECTION_CONFIDENCE,
     STORAGE_TYPE, CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
 )
 import sys
@@ -23,7 +24,6 @@ from shared.image_storage_service import ImageStorageService
 import cv2
 import numpy as np
 import base64
-import face_recognition
 from datetime import datetime
 from typing import List, Optional, Dict
 from pydantic import BaseModel
@@ -49,8 +49,14 @@ if not os.path.exists(HAAR_CASCADE_PATH):
 else:
     logger.info(f"Haar Cascade file found at: {HAAR_CASCADE_PATH}")
 
-# Initialize face recognition service with Haar Cascade support
-face_service = FaceRecognitionService(haar_cascade_path=HAAR_CASCADE_PATH, detection_method=FACE_DETECTION_METHOD)
+# Initialize face recognition service with Mediapipe + DeepFace stack
+face_service = FaceRecognitionService(
+    tolerance=FACE_RECOGNITION_TOLERANCE,
+    haar_cascade_path=HAAR_CASCADE_PATH,
+    detection_method=FACE_DETECTION_METHOD,
+    embedding_model=FACE_EMBEDDING_MODEL,
+    min_detection_confidence=FACE_DETECTION_CONFIDENCE,
+)
 ENCODINGS_FILE = "face_encodings.pkl"
 
 # Initialize image storage service
@@ -200,7 +206,7 @@ async def register_student(
             image_storage.delete_image(image_path)
             raise HTTPException(status_code=500, detail="Failed to process image")
         
-        # Detect and encode face using both methods (face_recognition + Haar Cascade)
+        # Detect and encode face using Mediapipe + optional Haar Cascade fallback
         try:
             faces = face_service.detect_faces(temp_image_path, method=FACE_DETECTION_METHOD, haar_cascade_path=HAAR_CASCADE_PATH)
             if not faces:
@@ -664,9 +670,7 @@ async def get_face_detection_status():
                 "message": "No frame available"
             }
         
-        # Detect faces using face_service (recognize_from_camera returns face locations)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        face_locations = face_recognition.face_locations(rgb_frame, model="hog")
+        face_locations = face_service.detect_faces_in_frame(frame)
         face_count = len(face_locations)
         
         return {

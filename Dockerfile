@@ -14,9 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     pkg-config \
-    libopenblas-dev \
-    liblapack-dev \
-    libboost-python-dev \
     libx11-dev \
     libsm6 \
     libxext6 \
@@ -30,11 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# Try to install pre-built dlib wheel, fallback to system-toolchain build if needed
-RUN pip install --no-cache-dir --prefer-binary dlib==19.24.2 || \
-    (echo "Pre-built wheel failed, compiling with system toolchain..." && \
-     pip install --no-cache-dir --no-build-isolation dlib==19.24.2)
 
 # Copy and install Python dependencies
 COPY requirements.txt .

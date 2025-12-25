@@ -46,7 +46,7 @@ def test_db():
 def create_test_image():
     """Create a test image file."""
     import numpy as np
-    # Create a proper RGB image that face_recognition can process
+    # Create a proper RGB image that the detection pipeline can process
     img_array = np.zeros((100, 100, 3), dtype=np.uint8)
     img_array[:, :] = [255, 0, 0]  # Red color
     img = Image.fromarray(img_array, 'RGB')
