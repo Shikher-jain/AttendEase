@@ -1,4 +1,4 @@
-"""Face recognition helpers powered by Mediapipe detection and DeepFace embeddings."""
+"""Face recognition helpers powered entirely by Mediapipe (detection + embeddings)."""
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -8,7 +8,6 @@ import logging
 import mediapipe as mp
 import numpy as np
 import pickle
-from deepface import DeepFace
 
 logger = logging.getLogger("attendance_app.face_recognition")
 
@@ -21,22 +20,29 @@ class FaceRecognitionService:
         tolerance: float = 0.75,
         haar_cascade_path: Optional[str] = None,
         detection_method: str = "mediapipe",
-        embedding_model: str = "Facenet512",
+        embedding_model: str = "mediapipe-mesh",
         min_detection_confidence: float = 0.6,
+        min_tracking_confidence: float = 0.5,
     ):
         self.tolerance = tolerance
         self.haar_cascade_path = haar_cascade_path
-        self.embedding_model_name = embedding_model
+        self.embedding_model_name = embedding_model or "mediapipe-mesh"
         self.min_detection_confidence = min_detection_confidence
+        self.min_tracking_confidence = min_tracking_confidence
         self.known_face_encodings: List[np.ndarray] = []
         self.known_face_names: List[str] = []
         self.embedding_size: Optional[int] = None
 
-        self._embedding_model = None
         self._haar_cascade = None
         self._mp_face_detection = mp.solutions.face_detection.FaceDetection(
             model_selection=0,
             min_detection_confidence=self.min_detection_confidence,
+        )
+        self._mp_face_mesh = mp.solutions.face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=self.min_detection_confidence,
+            min_tracking_confidence=self.min_tracking_confidence,
         )
 
         method_aliases = {
@@ -429,38 +435,39 @@ class FaceRecognitionService:
         return face
 
     def _compute_embedding(self, face_rgb: np.ndarray) -> Optional[np.ndarray]:
-        try:
-            model = self._ensure_embedding_model()
-            representations = DeepFace.represent(
-                img_path=face_rgb,
-                model_name=self.embedding_model_name,
-                detector_backend="skip",
-                enforce_detection=False,
-                normalization="base",
-                align=True,
-                model=model,
-            )
+        """Compute a deterministic embedding using Mediapipe Face Mesh landmarks."""
 
-            if not representations:
-                return None
-
-            embedding = np.array(representations[0]["embedding"], dtype=np.float32)
-            if self.embedding_size is None:
-                self.embedding_size = embedding.shape[0]
-            return embedding
-        except Exception as e:
-            logger.error(f"Failed to compute embedding: {str(e)}")
+        if self._mp_face_mesh is None:
+            logger.error("Face mesh model is not initialized")
             return None
 
-    def _ensure_embedding_model(self):
-        if self._embedding_model is None:
-            logger.info("Loading DeepFace model '%s'", self.embedding_model_name)
-            self._embedding_model = DeepFace.build_model(self.embedding_model_name)
-            try:
-                self.embedding_size = int(self._embedding_model.outputs[0].shape[-1])
-            except Exception:
-                self.embedding_size = None
-        return self._embedding_model
+        if not face_rgb.flags["C_CONTIGUOUS"]:
+            face_rgb = np.ascontiguousarray(face_rgb)
+
+        try:
+            results = self._mp_face_mesh.process(face_rgb)
+        except Exception as exc:
+            logger.error(f"Face mesh inference failed: {str(exc)}")
+            return None
+
+        if not results.multi_face_landmarks:
+            return None
+
+        landmark_coords = np.array(
+            [[lm.x, lm.y, lm.z] for lm in results.multi_face_landmarks[0].landmark],
+            dtype=np.float32,
+        )
+
+        # Normalize landmarks to make embeddings translation/scale invariant
+        landmark_coords -= np.mean(landmark_coords, axis=0, keepdims=True)
+        scale = np.max(np.linalg.norm(landmark_coords, axis=1))
+        if scale > 0:
+            landmark_coords /= scale
+
+        embedding = landmark_coords.flatten()
+        if self.embedding_size is None:
+            self.embedding_size = embedding.shape[0]
+        return embedding
 
     def _match_embeddings(
         self,
@@ -504,5 +511,7 @@ class FaceRecognitionService:
         try:
             if self._mp_face_detection:
                 self._mp_face_detection.close()
+            if self._mp_face_mesh:
+                self._mp_face_mesh.close()
         except Exception:
             pass

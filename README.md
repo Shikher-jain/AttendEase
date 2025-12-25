@@ -42,7 +42,7 @@ attendance_app/
  frontend/              # Frontend UI
     app.py            # Streamlit application
  shared/                # Shared utilities
-   face_recognition_service.py  # Mediapipe + DeepFace face recognition logic
+   face_recognition_service.py  # Mediapipe detection + landmark-based recognition logic
     live_video_service.py        # Live video processing
  tests/                 # Test suite
     test_api.py       # API endpoint tests
@@ -463,7 +463,7 @@ UPLOAD_DIR = "student_images"
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Face Recognition
-FACE_EMBEDDING_MODEL = "Facenet512"  # DeepFace embedding backbone
+FACE_EMBEDDING_MODEL = "mediapipe-mesh"  # Mediapipe landmark embedding backend
 FACE_RECOGNITION_TOLERANCE = 0.75     # Lower = more strict
 
 # Face Detection Method
@@ -677,4 +677,4 @@ For issues, questions, or contributions:
 
 **Version**: 2.1.0 (Production-Ready)  
 **Last Updated**: December 2025  
-**Built with**: FastAPI, Streamlit, Mediapipe, DeepFace, SQLAlchemy, Cloudinary
+**Built with**: FastAPI, Streamlit, Mediapipe, OpenCV, SQLAlchemy, Cloudinary

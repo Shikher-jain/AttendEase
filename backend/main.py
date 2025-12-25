@@ -49,7 +49,7 @@ if not os.path.exists(HAAR_CASCADE_PATH):
 else:
     logger.info(f"Haar Cascade file found at: {HAAR_CASCADE_PATH}")
 
-# Initialize face recognition service with Mediapipe + DeepFace stack
+# Initialize face recognition service with Mediapipe-only detection/embeddings
 face_service = FaceRecognitionService(
     tolerance=FACE_RECOGNITION_TOLERANCE,
     haar_cascade_path=HAAR_CASCADE_PATH,

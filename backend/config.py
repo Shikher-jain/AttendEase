@@ -32,7 +32,7 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Face recognition configuration
 FACE_RECOGNITION_TOLERANCE = float(os.getenv("FACE_RECOGNITION_TOLERANCE", "0.75"))
-FACE_EMBEDDING_MODEL = os.getenv("FACE_EMBEDDING_MODEL") or os.getenv("FACE_RECOGNITION_MODEL", "Facenet512")
+FACE_EMBEDDING_MODEL = os.getenv("FACE_EMBEDDING_MODEL") or os.getenv("FACE_RECOGNITION_MODEL", "mediapipe-mesh")
 FACE_DETECTION_CONFIDENCE = float(os.getenv("FACE_DETECTION_CONFIDENCE", "0.6"))
 
 # Haar Cascade / detection configuration
