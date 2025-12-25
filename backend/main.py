@@ -8,7 +8,7 @@ from .logger import logger
 from .config import (
     UPLOAD_DIR, ALLOWED_EXTENSIONS, MAX_FILE_SIZE, ALLOWED_ORIGINS,
     HAAR_CASCADE_PATH, FACE_DETECTION_METHOD, FACE_RECOGNITION_TOLERANCE,
-    FACE_EMBEDDING_MODEL, FACE_DETECTION_CONFIDENCE,
+    FACE_EMBEDDING_MODEL,
     STORAGE_TYPE, CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
 )
 import sys
@@ -48,7 +48,6 @@ face_service = FaceRecognitionService(
     haar_cascade_path=HAAR_CASCADE_PATH,
     detection_method=FACE_DETECTION_METHOD,
     embedding_model=FACE_EMBEDDING_MODEL,
-    min_detection_confidence=FACE_DETECTION_CONFIDENCE,
 )
 ENCODINGS_FILE = "face_encodings.pkl"
 

@@ -27,8 +27,6 @@ services:
         value: Facenet512
       - key: FACE_RECOGNITION_TOLERANCE
         value: 0.75
-      - key: FACE_DETECTION_CONFIDENCE
-        value: 0.6
       - key: LOG_LEVEL
         value: INFO
       - key: ALLOWED_ORIGINS
