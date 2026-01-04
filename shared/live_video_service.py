@@ -235,16 +235,20 @@ class LiveVideoService:
             if frame is None:
                 continue
             
-            face_locations = self.face_service.detect_faces_in_frame(frame)
-
-            if len(face_locations) == 1:
-                logger.info(f"Good registration frame captured on attempt {attempt + 1}")
-                return {
-                    "success": True,
-                    "frame": frame,
-                    "face_location": face_locations[0],
-                    "message": "Single face detected"
-                }
+            # Detect faces
+            try:
+                face_locations = self.face_service.detect_faces_in_frame(frame)
+                if len(face_locations) == 1:
+                    logger.info("Good registration frame captured on attempt %d", attempt + 1)
+                    return {
+                        "success": True,
+                        "frame": frame,
+                        "face_location": face_locations[0],
+                        "message": "Single face detected"
+                    }
+            except Exception as e:
+                logger.error(f"Error detecting face: {str(e)}")
+                continue
         
         logger.warning("Failed to capture good registration frame")
         return None

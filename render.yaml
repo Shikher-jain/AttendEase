@@ -22,11 +22,13 @@ services:
       - key: UPLOAD_DIR
         value: /tmp/student_images
       - key: FACE_DETECTION_METHOD
-        value: mediapipe
-      - key: FACE_EMBEDDING_MODEL
-        value: Facenet512
+        value: hybrid
+      - key: FACE_RECOGNITION_MODEL
+        value: ArcFace
       - key: FACE_RECOGNITION_TOLERANCE
-        value: 0.75
+        value: 0.35
+      - key: FACE_DISTANCE_METRIC
+        value: cosine
       - key: LOG_LEVEL
         value: INFO
       - key: ALLOWED_ORIGINS

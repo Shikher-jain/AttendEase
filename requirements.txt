@@ -3,12 +3,10 @@ fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 
-
-# Face analysis stack
-insightface>=0.7.3
-onnxruntime>=1.16.0
-scikit-image>=0.22.0
-scipy>=1.10.0
+# Vision / Deep Learning stack
+deepface>=0.0.95
+tensorflow==2.16.1
+mediapipe>=0.10.14
 
 # Database
 sqlalchemy>=2.0.0

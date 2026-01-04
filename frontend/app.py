@@ -608,7 +608,8 @@ elif choice == "System Health":
                 face_service = diagnostics["face_service"]
                 st.write(f"**Detection Method:** {face_service['detection_method']}")
                 st.write(f"**Model:** {face_service['model']}")
-                st.write(f"**Tolerance:** {face_service['tolerance']}")
+                st.write(f"**Match Threshold:** {face_service.get('match_threshold', face_service.get('tolerance'))}")
+                st.write(f"**Distance Metric:** {face_service.get('distance_metric', 'cosine')}")
                 st.write(f"**Known Faces:** {face_service['known_faces_count']}")
                 if face_service['known_faces']:
                     st.write("**Registered Students:**")

@@ -31,16 +31,14 @@ ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Face recognition configuration
-FACE_RECOGNITION_TOLERANCE = float(os.getenv("FACE_RECOGNITION_TOLERANCE", "0.75"))
-FACE_EMBEDDING_MODEL = os.getenv("FACE_EMBEDDING_MODEL") or os.getenv("FACE_RECOGNITION_MODEL", "mediapipe-mesh")
+_FACE_THRESHOLD = os.getenv("FACE_MATCH_THRESHOLD", os.getenv("FACE_RECOGNITION_TOLERANCE", "0.35"))
+FACE_RECOGNITION_TOLERANCE = float(_FACE_THRESHOLD)
+FACE_RECOGNITION_MODEL = os.getenv("FACE_RECOGNITION_MODEL", "ArcFace")
+FACE_DISTANCE_METRIC = os.getenv("FACE_DISTANCE_METRIC", "cosine")
 
-# Haar Cascade / detection configuration
+# Haar Cascade configuration
 HAAR_CASCADE_PATH = str(BASE_DIR / "haarcascade_frontalface_default.xml")
-FACE_DETECTION_METHOD = os.getenv("FACE_DETECTION_METHOD", "mediapipe").lower()
-if FACE_DETECTION_METHOD == "auto":
-	FACE_DETECTION_METHOD = "mediapipe"
-if FACE_DETECTION_METHOD not in {"mediapipe", "haar", "both"}:
-	FACE_DETECTION_METHOD = "mediapipe"
+FACE_DETECTION_METHOD = os.getenv("FACE_DETECTION_METHOD", "haar")  # 'haar', 'mediapipe', or 'hybrid'
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

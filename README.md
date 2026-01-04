@@ -22,7 +22,7 @@ A comprehensive face recognition-based attendance system with **real-time live v
 ### Technical Features
 -  Comprehensive error handling and validation
 -  Detailed logging for debugging and monitoring
--  InsightFace ArcFace detection + embeddings (no dlib / DeepFace)
+-  **Hybrid face detection** (Mediapipe + optional Haar Cascade fallback)
 -  Face detection with validation (single face per image)
 -  Database relationships and integrity constraints
 -  RESTful API with FastAPI
@@ -42,7 +42,7 @@ attendance_app/
  frontend/              # Frontend UI
     app.py            # Streamlit application
  shared/                # Shared utilities
-    face_recognition_service.py  # InsightFace detection + embedding logic
+   face_recognition_service.py  # Mediapipe + DeepFace face recognition logic
     live_video_service.py        # Live video processing
  tests/                 # Test suite
     test_api.py       # API endpoint tests
@@ -50,7 +50,7 @@ attendance_app/
    test_face_recognition.py  # Face recognition tests (optional)
  student_images/        # Student photos storage
  logs/                  # Application logs
- haarcascade_frontalface_default.xml  # Legacy Haar Cascade (optional diagnostics)
+ haarcascade_frontalface_default.xml  # Haar Cascade classifier for face detection
  requirements.txt       # Python dependencies
  README.md             # This file
 ```
@@ -408,16 +408,18 @@ GET /live/frame/capture                  # Capture current frame
 **For Better Speed:**
 ```python
 # In config.py:
-FACE_EMBEDDING_MODEL = "buffalo_m"   # Smaller InsightFace pack, faster on CPU
-FACE_DETECTION_METHOD = "insightface"
+FACE_RECOGNITION_MODEL = "Facenet"    # Lighter backbone
+FACE_MATCH_THRESHOLD = 0.45           # Allow slightly higher distance
+FACE_DETECTION_METHOD = "haar"       # Pure OpenCV cascade
 ```
 
 **For Better Accuracy:**
 ```python
 # In config.py:
-FACE_EMBEDDING_MODEL = "buffalo_l"  # Higher dimensional embeddings
-FACE_RECOGNITION_TOLERANCE = 0.6      # Lower = stricter matching
-FACE_DETECTION_METHOD = "insightface"
+FACE_RECOGNITION_MODEL = "ArcFace"    # High-accuracy backbone
+FACE_MATCH_THRESHOLD = 0.30           # Stricter distance limit
+FACE_DISTANCE_METRIC = "cosine"
+FACE_DETECTION_METHOD = "hybrid"     # Haar + MediaPipe fusion
 ```
 
 **Camera Settings:**
@@ -463,11 +465,13 @@ UPLOAD_DIR = "student_images"
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Face Recognition
-FACE_EMBEDDING_MODEL = "buffalo_l"   # InsightFace model pack
-FACE_RECOGNITION_TOLERANCE = 0.75     # Lower = more strict
+FACE_RECOGNITION_MODEL = "ArcFace"   # DeepFace embedding backbone
+FACE_MATCH_THRESHOLD = 0.35           # Lower distance = stricter match
+FACE_DISTANCE_METRIC = "cosine"
 
 # Face Detection Method
-FACE_DETECTION_METHOD = "insightface"
+FACE_DETECTION_METHOD = "haar"       # 'haar', 'mediapipe', or 'hybrid'
+HAAR_CASCADE_PATH = "haarcascade_frontalface_default.xml"
 
 # Logging
 LOG_LEVEL = "INFO"
@@ -551,7 +555,7 @@ rm attendance.db
 - Upload higher resolution images
 
 **Problem**: Wrong person recognized
-- Reduce `FACE_RECOGNITION_TOLERANCE` in config.py
+- Lower `FACE_MATCH_THRESHOLD` in config.py
 - Re-register student with better quality photo
 
 ### Frontend Issues
@@ -675,4 +679,4 @@ For issues, questions, or contributions:
 
 **Version**: 2.1.0 (Production-Ready)  
 **Last Updated**: December 2025  
-**Built with**: FastAPI, Streamlit, InsightFace, OpenCV, SQLAlchemy, Cloudinary
+**Built with**: FastAPI, Streamlit, Mediapipe, DeepFace, SQLAlchemy, Cloudinary

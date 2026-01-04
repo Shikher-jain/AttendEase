@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     pkg-config \
+    libopenblas-dev \
+    liblapack-dev \
+    libboost-python-dev \
     libx11-dev \
     libsm6 \
     libxext6 \
